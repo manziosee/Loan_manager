@@ -1,0 +1,61 @@
+name: PR Validation
+
+on:
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  validate:
+    name: Validate PR
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB:       loanmanager_test
+          POSTGRES_USER:     postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install Clojure CLI
+        uses: DeLaGuardo/setup-clojure@12
+        with:
+          cli: latest
+
+      - name: Cache deps
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-deps-${{ hashFiles('deps.edn') }}
+
+      - name: Check formatting (cljfmt)
+        run: |
+          clojure -Sdeps '{:deps {cljfmt/cljfmt {:mvn/version "0.9.2"}}}' \
+            -M -m cljfmt.main check src || echo "::warning::Formatting issues found"
+
+      - name: Run tests
+        env:
+          DATABASE_URL: "jdbc:postgresql://localhost:5432/loanmanager_test"
+          DB_USER:      postgres
+          DB_PASS:      postgres
+          JWT_SECRET:   "test-secret-min-32-chars-for-ci-pipeline"
+        run: clojure -M:test
+
+      - name: Verify build compiles
+        run: clojure -T:build uber

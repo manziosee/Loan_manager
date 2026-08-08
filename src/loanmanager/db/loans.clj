@@ -125,10 +125,43 @@
 
 (defn overdue-loans [ds tenant-id]
   (jdbc/execute! ds
-    (sql/format {:select [:l.* [:c.email :customer-email] [:c.phone :customer-phone]]
+    (sql/format {:select [:l.* [:c.email :customer-email] [:c.phone :customer-phone]
+                          [:c.first-name :customer-first-name] [:c.last-name :customer-last-name]]
                  :from   [[:loans :l]]
                  :join   [[:customers :c] [:= :l.customer-id :c.id]]
                  :where  [:and
                           [:= :l.tenant-id tenant-id]
-                          [:in :l.status ["active" "overdue"]]
-                          [:> :l.days-overdue 0]]})))
+                          [:in :l.status ["active" "overdue" "npl"]]]})))
+
+(defn all-active-loans [ds tenant-id]
+  (jdbc/execute! ds
+    (sql/format {:select [:*]
+                 :from   [:loans]
+                 :where  [:and
+                          [:= :tenant-id tenant-id]
+                          [:in :status ["active" "overdue"]]]})))
+
+(defn update-delinquency! [ds tenant-id loan-id days-overdue bucket]
+  (db/execute-one! ds
+    (sql/format {:update    :loans
+                 :set       {:days-overdue      days-overdue
+                             :delinquency-bucket (name bucket)
+                             :status            (case bucket
+                                                  :npl "npl"
+                                                  :current "active"
+                                                  "overdue")
+                             :updated-at        [:now]}
+                 :where     [:and [:= :tenant-id tenant-id] [:= :id loan-id]]
+                 :returning [:id :days-overdue :delinquency-bucket :status]})))
+
+(defn prepayment-settlement [ds tenant-id loan-id]
+  "Fetch all data needed for early repayment calculation."
+  (jdbc/execute-one! ds
+    (sql/format {:select [:l.* [:p.name :product-name]
+                          [[:coalesce [:sum :py.amount] 0] :total-paid]]
+                 :from   [[:loans :l]]
+                 :join   [[:loan-products :p] [:= :l.product-id :p.id]]
+                 :left-join [[:payments :py] [:and [:= :py.loan-id :l.id]
+                                                   [:= :py.reversed false]]]
+                 :where  [:and [:= :l.tenant-id tenant-id] [:= :l.id loan-id]]
+                 :group-by [:l.id :p.name]})))

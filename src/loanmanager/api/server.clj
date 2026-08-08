@@ -13,6 +13,10 @@
             [loanmanager.api.routes.customers :as customer-routes]
             [loanmanager.api.routes.products :as product-routes]
             [loanmanager.api.routes.loans :as loan-routes]
+            [loanmanager.api.routes.repayment :as repayment-routes]
+            [loanmanager.api.routes.credit :as credit-routes]
+            [loanmanager.api.routes.delinquency :as delinquency-routes]
+            [loanmanager.api.routes.collections :as collection-routes]
             [loanmanager.api.routes.audit :as audit-routes]))
 
 (defn create-handler [config ds bus]
@@ -20,7 +24,7 @@
         sw-config  (:swagger config)]
     (ring/ring-handler
      (ring/router
-      [;; Swagger spec endpoint
+      [;; ── Swagger spec ──────────────────────────────────────────────────────
        ["/swagger.json"
         {:get {:no-doc  true
                :swagger {:info {:title       (:title sw-config)
@@ -29,16 +33,23 @@
                           :securityDefinitions
                           {:BearerAuth {:type "apiKey"
                                         :in   "header"
-                                        :name "Authorization"}}}
+                                        :name "Authorization"}}
+                          :security [{:BearerAuth []}]}
                :handler (swagger/create-swagger-handler)}}]
 
-       ;; Public routes (no auth)
+       ;; ── Public routes (no auth required) ──────────────────────────────────
        ["/api/v1"
         (auth-routes/routes ds config)
-        ["/loans/simulate" (-> (loan-routes/routes ds bus)
-                               (->> (filter #(= "/loans/simulate" (first %)))))]]
+        ["/loans/simulate"
+         {:post {:summary    "Simulate repayment schedule — all methods (public)"
+                 :tags       ["Repayment Engine" "Tools"]
+                 :parameters {:body loanmanager.api.schemas/SimulateRequest}
+                 :handler    (fn [req]
+                               ((-> (repayment-routes/routes ds bus)
+                                    (->> (filter #(= "/loans/simulate" (first %))))
+                                    first second :post :handler) req))}}]]
 
-       ;; Protected routes
+       ;; ── Protected routes ──────────────────────────────────────────────────
        ["/api/v1"
         {:middleware [[sec/wrap-authentication sec-config]
                       sec/wrap-require-auth
@@ -46,6 +57,10 @@
         (customer-routes/routes ds)
         (product-routes/routes ds)
         (loan-routes/routes ds bus)
+        (repayment-routes/routes ds bus)
+        (credit-routes/routes ds)
+        (delinquency-routes/routes ds bus)
+        (collection-routes/routes ds)
         (audit-routes/routes ds)]]
 
       {:data {:coercion   malli-coercion/coercion

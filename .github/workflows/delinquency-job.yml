@@ -1,0 +1,68 @@
+name: Delinquency Classification Job
+
+on:
+  schedule:
+    # Run every day at 01:00 UTC
+    - cron: "0 1 * * *"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        default: "production"
+        type: choice
+        options: [production, staging]
+
+jobs:
+  run-delinquency-job:
+    name: Run Delinquency Classification
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Trigger delinquency classification via API
+        run: |
+          ENV="${{ github.event.inputs.environment || 'production' }}"
+
+          if [ "$ENV" = "production" ]; then
+            API_URL="${{ secrets.PROD_API_URL }}"
+            API_TOKEN="${{ secrets.PROD_SERVICE_TOKEN }}"
+          else
+            API_URL="${{ secrets.STAGING_API_URL }}"
+            API_TOKEN="${{ secrets.STAGING_SERVICE_TOKEN }}"
+          fi
+
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "$API_URL/api/v1/delinquency/run" \
+            -H "Authorization: Bearer $API_TOKEN" \
+            -H "Content-Type: application/json")
+
+          echo "Delinquency job response: $RESPONSE"
+
+          if [ "$RESPONSE" != "200" ]; then
+            echo "::error::Delinquency job failed with status $RESPONSE"
+            exit 1
+          fi
+
+      - name: Check broken promises
+        run: |
+          ENV="${{ github.event.inputs.environment || 'production' }}"
+
+          if [ "$ENV" = "production" ]; then
+            API_URL="${{ secrets.PROD_API_URL }}"
+            API_TOKEN="${{ secrets.PROD_SERVICE_TOKEN }}"
+          else
+            API_URL="${{ secrets.STAGING_API_URL }}"
+            API_TOKEN="${{ secrets.STAGING_SERVICE_TOKEN }}"
+          fi
+
+          curl -s \
+            "$API_URL/api/v1/collections/broken-promises" \
+            -H "Authorization: Bearer $API_TOKEN" | \
+            python3 -c "
+          import sys, json
+          data = json.load(sys.stdin)
+          count = len(data) if isinstance(data, list) else 0
+          print(f'Broken promises requiring follow-up: {count}')
+          if count > 0:
+              print('::warning::' + str(count) + ' broken promises need officer follow-up')
+          "
