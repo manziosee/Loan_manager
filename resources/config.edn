@@ -1,0 +1,17 @@
+{:server   {:port #long #or [#env PORT "8080"]}
+
+ :database {:jdbc-url  #or [#env DATABASE_URL
+                             "jdbc:postgresql://localhost:5432/loanmanager"]
+            :username  #or [#env DB_USER "postgres"]
+            :password  #or [#env DB_PASS "postgres"]
+            :pool-size 10}
+
+ :security {:jwt-secret       #or [#env JWT_SECRET "change-me-in-production-min-32-chars!!"]
+            :jwt-expiry-hours 24
+            :bcrypt-cost      12}
+
+ :events   {:buffer-size 1024}
+
+ :swagger  {:title       "LoanOS API"
+            :description "Bank-grade Loan Management Platform"
+            :version     "1.0.0"}}

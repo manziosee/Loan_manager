@@ -1,0 +1,134 @@
+(ns loanmanager.db.loans
+  (:require [next.jdbc :as jdbc]
+            [honey.sql :as sql]
+            [loanmanager.db.connection :as db]))
+
+;; ── Applications ─────────────────────────────────────────────────────────────
+
+(defn create-application! [ds application]
+  (db/execute-one! ds
+    (sql/format {:insert-into :loan-applications
+                 :values      [application]
+                 :returning   [:*]})))
+
+(defn find-application [ds tenant-id id]
+  (jdbc/execute-one! ds
+    (sql/format {:select [:*]
+                 :from   [:loan-applications]
+                 :where  [:and [:= :tenant-id tenant-id] [:= :id id]]})))
+
+(defn update-application! [ds tenant-id id changes]
+  (db/execute-one! ds
+    (sql/format {:update    :loan-applications
+                 :set       (assoc changes :updated-at [:now])
+                 :where     [:and [:= :tenant-id tenant-id] [:= :id id]]
+                 :returning [:*]})))
+
+(defn list-applications [ds tenant-id {:keys [status limit offset]
+                                        :or   {limit 20 offset 0}}]
+  (jdbc/execute! ds
+    (sql/format (cond-> {:select [:la.* [:c.first-name :customer-first-name]
+                                  [:c.last-name :customer-last-name]
+                                  [:p.name :product-name]]
+                          :from   [[:loan-applications :la]]
+                          :join   [[:customers :c]     [:= :la.customer-id :c.id]
+                                   [:loan-products :p] [:= :la.product-id :p.id]]
+                          :where  [:= :la.tenant-id tenant-id]
+                          :limit  limit
+                          :offset offset}
+                  status (update :where conj [:= :la.status (name status)])))))
+
+;; ── Approval steps ────────────────────────────────────────────────────────────
+
+(defn add-approval-step! [ds step]
+  (db/execute-one! ds
+    (sql/format {:insert-into :approval-steps
+                 :values      [step]
+                 :returning   [:*]})))
+
+(defn get-approval-steps [ds application-id]
+  (jdbc/execute! ds
+    (sql/format {:select   [:*]
+                 :from     [:approval-steps]
+                 :where    [:= :application-id application-id]
+                 :order-by [[:step-order :asc]]})))
+
+;; ── Loans ─────────────────────────────────────────────────────────────────────
+
+(defn create-loan! [ds loan]
+  (db/execute-one! ds
+    (sql/format {:insert-into :loans
+                 :values      [loan]
+                 :returning   [:*]})))
+
+(defn find-loan [ds tenant-id id]
+  (jdbc/execute-one! ds
+    (sql/format {:select [:*]
+                 :from   [:loans]
+                 :where  [:and [:= :tenant-id tenant-id] [:= :id id]]})))
+
+(defn update-loan! [ds tenant-id id changes]
+  (db/execute-one! ds
+    (sql/format {:update    :loans
+                 :set       (assoc changes :updated-at [:now])
+                 :where     [:and [:= :tenant-id tenant-id] [:= :id id]]
+                 :returning [:*]})))
+
+(defn customer-loans [ds tenant-id customer-id]
+  (jdbc/execute! ds
+    (sql/format {:select [:*]
+                 :from   [:loans]
+                 :where  [:and
+                          [:= :tenant-id tenant-id]
+                          [:= :customer-id customer-id]]
+                 :order-by [[:created-at :desc]]})))
+
+;; ── Repayment schedule ────────────────────────────────────────────────────────
+
+(defn insert-schedule! [ds loan-id installments]
+  (db/execute! ds
+    (sql/format {:insert-into :repayment-schedules
+                 :values      (mapv #(assoc % :loan-id loan-id) installments)})))
+
+(defn get-schedule [ds loan-id]
+  (jdbc/execute! ds
+    (sql/format {:select   [:*]
+                 :from     [:repayment-schedules]
+                 :where    [:= :loan-id loan-id]
+                 :order-by [[:installment-no :asc]]})))
+
+(defn next-due-installment [ds loan-id]
+  (jdbc/execute-one! ds
+    (sql/format {:select   [:*]
+                 :from     [:repayment-schedules]
+                 :where    [:and [:= :loan-id loan-id]
+                                 [:in :status ["pending" "partial" "overdue"]]]
+                 :order-by [[:due-date :asc]]
+                 :limit    1})))
+
+;; ── Payments ──────────────────────────────────────────────────────────────────
+
+(defn record-payment! [ds payment]
+  (db/execute-one! ds
+    (sql/format {:insert-into :payments
+                 :values      [payment]
+                 :returning   [:*]})))
+
+(defn loan-payments [ds loan-id]
+  (jdbc/execute! ds
+    (sql/format {:select   [:*]
+                 :from     [:payments]
+                 :where    [:and [:= :loan-id loan-id] [:= :reversed false]]
+                 :order-by [[:payment-date :desc]]})))
+
+;; ── Overdue loans (for delinquency job) ──────────────────────────────────────
+
+(defn overdue-loans [ds tenant-id]
+  (jdbc/execute! ds
+    (sql/format {:select [:l.* [:c.email :customer-email] [:c.phone :customer-phone]]
+                 :from   [[:loans :l]]
+                 :join   [[:customers :c] [:= :l.customer-id :c.id]]
+                 :where  [:and
+                          [:= :l.tenant-id tenant-id]
+                          [:in :l.status ["active" "overdue"]]
+                          [:> :l.days-overdue 0]]})))
