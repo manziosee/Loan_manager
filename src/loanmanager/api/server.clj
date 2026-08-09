@@ -9,6 +9,7 @@
             [reitit.swagger-ui :as swagger-ui]
             [muuntaja.core :as m]
             [loanmanager.api.schemas :as schemas]
+            [loanmanager.domain.finance :as finance]
             [loanmanager.security.middleware :as sec]
             [loanmanager.api.routes.auth :as auth-routes]
             [loanmanager.api.routes.customers :as customer-routes]
@@ -46,12 +47,12 @@
                  :parameters {:body schemas/SimulateRequest}
                  :handler    (fn [{:keys [body-params]}]
                                (let [{:keys [principal annual-rate months]} body-params
-                                     schedule (loanmanager.domain.finance/build-schedule
+                                     schedule (finance/build-schedule
                                                 {:method          :reducing-balance
                                                  :principal       principal
                                                  :annual-rate     (/ annual-rate 100)
                                                  :duration-months months})
-                                     summary  (loanmanager.domain.finance/schedule-summary schedule principal)]
+                                     summary  (finance/schedule-summary schedule principal)]
                                  {:status 200 :body {:summary summary :schedule schedule}}))}}]]
 
        ;; Protected routes

@@ -18,9 +18,9 @@
 
 (defn disbursement-entry
   "Debit: Loans Receivable | Credit: Cash"
-  [{:keys [amount currency] :as evt}]
-  (entry (str "Loan disbursement " (:loan-id evt))
-         :disbursement (:loan-id evt)
+  [{:keys [loan-id amount currency]}]
+  (entry (str "Loan disbursement " loan-id)
+         :disbursement loan-id
          [(debit  LOANS-RECEIVABLE amount currency)
           (credit CASH-AT-BANK     amount currency)]))
 
