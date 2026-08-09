@@ -151,6 +151,50 @@
   [:map
    [:refresh-token :string]])
 
+;; ── Loan product update ──────────────────────────────────────────────────────
+(def LoanProductUpdate
+  [:map
+   [:name                {:optional true} [:string {:min 2 :max 200}]]
+   [:interest-rate-min   {:optional true} [:double {:min 0}]]
+   [:interest-rate-max   {:optional true} [:double {:min 0}]]
+   [:duration-min        {:optional true} [:int {:min 1}]]
+   [:duration-max        {:optional true} [:int {:min 1}]]
+   [:amount-min          {:optional true} [:double {:min 0}]]
+   [:amount-max          {:optional true} [:double {:min 0}]]
+   [:processing-fee-pct  {:optional true} [:double {:min 0}]]
+   [:late-fee-pct        {:optional true} [:double {:min 0}]]
+   [:grace-period-days   {:optional true} :int]
+   [:collateral-required {:optional true} :boolean]])
+
+;; ── Application update ────────────────────────────────────────────────────────
+(def ApplicationUpdate
+  [:map
+   [:requested-amount   {:optional true} [:double {:min 1}]]
+   [:requested-duration {:optional true} [:int {:min 1}]]
+   [:purpose            {:optional true} :string]])
+
+;; ── Loan lifecycle actions ────────────────────────────────────────────────────
+(def RestructureRequest
+  [:map
+   [:new-interest-rate   {:optional true} [:double {:min 0}]]
+   [:new-duration-months {:optional true} [:int {:min 1}]]
+   [:new-repayment-freq  {:optional true} [:enum "daily" "weekly" "biweekly" "monthly" "quarterly"]]
+   [:reason              :string]])
+
+(def WriteOffRequest
+  [:map
+   [:reason :string]])
+
+(def PaymentReverseRequest
+  [:map
+   [:reason :string]])
+
+;; ── Report date range ─────────────────────────────────────────────────────────
+(def DateRangeQuery
+  [:map
+   [:from :string]
+   [:to   :string]])
+
 ;; ── Collections ──────────────────────────────────────────────────────────────
 (def ActivityCreate
   [:map

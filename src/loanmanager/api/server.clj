@@ -20,7 +20,8 @@
             [loanmanager.api.routes.delinquency :as delinquency-routes]
             [loanmanager.api.routes.collections :as collection-routes]
             [loanmanager.api.routes.audit :as audit-routes]
-            [loanmanager.api.routes.users :as user-routes]))
+            [loanmanager.api.routes.users :as user-routes]
+            [loanmanager.api.routes.reports :as report-routes]))
 
 (defn create-handler [config ds bus]
   (let [sec-config (:security config)
@@ -69,7 +70,8 @@
         (delinquency-routes/routes ds bus)
         (collection-routes/routes ds)
         (audit-routes/routes ds)
-        (user-routes/routes ds)]]
+        (user-routes/routes ds)
+        (report-routes/routes ds)]]
 
       {:data {:coercion   malli-coercion/coercion
               :muuntaja   m/instance

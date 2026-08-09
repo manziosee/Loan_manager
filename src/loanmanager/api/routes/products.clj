@@ -33,16 +33,45 @@
                             {:status 201 :body product}))}}]
 
    ["/loan-products/:id"
-    {:get {:summary    "Get loan product by ID"
-           :tags       ["Loan Products"]
-           :parameters {:path [:map [:id :string]]}
-           :handler    (fn [{:keys [identity tenant-id path-params]}]
-                         (rbac/require-permission identity :loan/read)
-                         (if-let [p (jdbc/execute-one! ds
-                                      (sql/format {:select [:*]
-                                                   :from   [:loan-products]
-                                                   :where  [:and
-                                                            [:= :tenant-id tenant-id]
-                                                            [:= :id (parse-uuid (:id path-params))]]}))]
-                           {:status 200 :body p}
-                           {:status 404 :body {:error "Product not found"}}))}}]])
+    {:get    {:summary    "Get loan product by ID"
+              :tags       ["Loan Products"]
+              :parameters {:path [:map [:id :string]]}
+              :handler    (fn [{:keys [identity tenant-id path-params]}]
+                            (rbac/require-permission identity :loan/read)
+                            (if-let [p (jdbc/execute-one! ds
+                                         (sql/format {:select [:*]
+                                                      :from   [:loan-products]
+                                                      :where  [:and
+                                                               [:= :tenant-id tenant-id]
+                                                               [:= :id (parse-uuid (:id path-params))]]}))]
+                              {:status 200 :body p}
+                              {:status 404 :body {:error "Product not found"}}))}
+
+     :put    {:summary    "Update a loan product"
+              :tags       ["Loan Products"]
+              :parameters {:path [:map [:id :string]]
+                           :body schemas/LoanProductUpdate}
+              :handler    (fn [{:keys [identity tenant-id path-params body-params]}]
+                            (rbac/require-permission identity :admin)
+                            (if-let [updated (jdbc/execute-one! ds
+                                               (sql/format {:update    :loan-products
+                                                            :set       (assoc body-params :updated-at [:now])
+                                                            :where     [:and
+                                                                        [:= :tenant-id tenant-id]
+                                                                        [:= :id (parse-uuid (:id path-params))]]
+                                                            :returning [:*]}))]
+                              {:status 200 :body updated}
+                              {:status 404 :body {:error "Product not found"}}))}
+
+     :delete {:summary    "Deactivate a loan product (soft delete)"
+              :tags       ["Loan Products"]
+              :parameters {:path [:map [:id :string]]}
+              :handler    (fn [{:keys [identity tenant-id path-params]}]
+                            (rbac/require-permission identity :admin)
+                            (jdbc/execute-one! ds
+                              (sql/format {:update :loan-products
+                                           :set    {:active false :updated-at [:now]}
+                                           :where  [:and
+                                                    [:= :tenant-id tenant-id]
+                                                    [:= :id (parse-uuid (:id path-params))]]}))
+                            {:status 204})}}]])

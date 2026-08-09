@@ -16,11 +16,12 @@
    :credit-officer  #{:customer/read    :customer/create   :customer/update
                       :application/read :application/create :application/approve
                       :credit-score/read :credit-score/override
-                      :loan/read        :loan/approve
+                      :loan/read        :loan/approve      :loan/restructure
                       :schedule/read    :payment/read}
 
    :finance         #{:loan/read        :loan/disburse
                       :payment/read     :payment/create    :payment/reverse
+                      :loan/restructure :loan/write-off
                       :ledger/read      :schedule/read}
 
    :collections     #{:loan/read        :payment/read      :payment/create
@@ -28,7 +29,7 @@
                       :customer/read}
 
    :risk-officer    #{:customer/read    :application/read  :application/approve
-                      :loan/read        :loan/approve
+                      :loan/read        :loan/approve      :loan/restructure :loan/write-off
                       :credit-score/read :credit-score/override
                       :fraud/read       :fraud/override
                       :portfolio/read}
@@ -38,7 +39,7 @@
                       :schedule/read    :collection/read   :portfolio/read
                       :user/read}
 
-   :admin           #{:all :user/read :user/manage}}
+   :admin           #{:all :user/read :user/manage}})
 
 (defn has-permission? [role permission]
   (let [perms (get permissions role #{})]

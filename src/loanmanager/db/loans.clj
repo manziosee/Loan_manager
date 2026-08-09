@@ -3,7 +3,23 @@
             [honey.sql :as sql]
             [loanmanager.db.connection :as db]))
 
-(defn create-application! [ds application]
+(defn list-loans [ds tenant-id {:keys [status customer-id limit offset]
+                                 :or   {limit 20 offset 0}}]
+  (jdbc/execute! ds
+    (sql/format (cond-> {:select   [:l.* [:c.first-name :customer-first-name]
+                                    [:c.last-name :customer-last-name]
+                                    [:p.name :product-name]]
+                          :from     [[:loans :l]]
+                          :join     [[:customers :c]     [:= :l.customer-id :c.id]
+                                     [:loan-products :p] [:= :l.product-id :p.id]]
+                          :where    [:= :l.tenant-id tenant-id]
+                          :order-by [[:l.created-at :desc]]
+                          :limit    limit
+                          :offset   offset}
+                  status      (update :where conj [:= :l.status status])
+                  customer-id (update :where conj [:= :l.customer-id customer-id])))))
+
+
   (db/execute-one! ds
     (sql/format {:insert-into :loan-applications
                  :values      [application]
@@ -152,3 +168,122 @@
                                                    [:= :py.reversed false]]]
                  :where     [:and [:= :l.tenant-id tenant-id] [:= :l.id loan-id]]
                  :group-by  [:l.id :p.name]})))
+
+(defn find-payment [ds tenant-id id]
+  (jdbc/execute-one! ds
+    (sql/format {:select [:p.* [:l.tenant-id :tenant-id]]
+                 :from   [[:payments :p]]
+                 :join   [[:loans :l] [:= :p.loan-id :l.id]]
+                 :where  [:and [:= :l.tenant-id tenant-id] [:= :p.id id]]})))
+
+(defn reverse-payment! [ds tenant-id payment-id reason reversed-by]
+  (jdbc/with-transaction [tx ds]
+    (let [payment (find-payment tx tenant-id payment-id)
+          _       (when (or (nil? payment) (:payments/reversed payment))
+                    (throw (ex-info "Payment not found or already reversed"
+                                   {:type :validation})))
+          loan-id (:payments/loan-id payment)]
+      (db/execute-one! tx
+        (sql/format {:update    :payments
+                     :set       {:reversed true :reversed-at [:now]
+                                 :reversal-reason reason :reversed-by reversed-by}
+                     :where     [:= :id payment-id]
+                     :returning [:*]}))
+      ;; restore outstanding principal
+      (db/execute-one! tx
+        (sql/format {:update :loans
+                     :set    {:outstanding-principal [:+ :outstanding-principal
+                                                      (:payments/principal-portion payment)]
+                              :total-paid-principal  [:- :total-paid-principal
+                                                      (:payments/principal-portion payment)]
+                              :total-paid-interest   [:- :total-paid-interest
+                                                      (:payments/interest-portion payment)]
+                              :updated-at            [:now]}
+                     :where  [:and [:= :tenant-id tenant-id] [:= :id loan-id]]}))
+      payment)))
+
+(defn write-off-loan! [ds tenant-id loan-id written-off-by reason]
+  (db/execute-one! ds
+    (sql/format {:update    :loans
+                 :set       {:status          "written-off"
+                             :written-off-at  [:now]
+                             :written-off-by  written-off-by
+                             :write-off-reason reason
+                             :updated-at      [:now]}
+                 :where     [:and [:= :tenant-id tenant-id] [:= :id loan-id]]
+                 :returning [:*]})))
+
+(defn restructure-loan! [ds tenant-id loan-id changes restructured-by]
+  (db/execute-one! ds
+    (sql/format {:update    :loans
+                 :set       (assoc changes
+                                   :restructured-at [:now]
+                                   :restructured-by restructured-by
+                                   :status          "active"
+                                   :updated-at      [:now])
+                 :where     [:and [:= :tenant-id tenant-id] [:= :id loan-id]]
+                 :returning [:*]})))
+
+;; ── Report queries ────────────────────────────────────────────────────────────
+
+(defn portfolio-summary [ds tenant-id]
+  (jdbc/execute! ds
+    (sql/format {:select   [:status
+                            [[:count :id] :count]
+                            [[:coalesce [:sum :outstanding-principal] 0] :outstanding]
+                            [[:coalesce [:sum :principal] 0] :disbursed]]
+                 :from     [:loans]
+                 :where    [:= :tenant-id tenant-id]
+                 :group-by [:status]})))
+
+(defn par-buckets [ds tenant-id]
+  (jdbc/execute! ds
+    (sql/format {:select   [:delinquency-bucket
+                            [[:count :id] :count]
+                            [[:coalesce [:sum :outstanding-principal] 0] :outstanding]]
+                 :from     [:loans]
+                 :where    [:and [:= :tenant-id tenant-id]
+                                 [:in :status ["active" "overdue" "npl"]]]
+                 :group-by [:delinquency-bucket]})))
+
+(defn disbursements-by-period [ds tenant-id from-date to-date]
+  (jdbc/execute! ds
+    (sql/format {:select   [[[:date-trunc "month" :disbursed-at] :month]
+                            [[:count :id] :count]
+                            [[:sum :principal] :total-disbursed]]
+                 :from     [:loans]
+                 :where    [:and [:= :tenant-id tenant-id]
+                                 [:>= :disbursed-at from-date]
+                                 [:<= :disbursed-at to-date]]
+                 :group-by [[:date-trunc "month" :disbursed-at]]
+                 :order-by [[[:date-trunc "month" :disbursed-at] :asc]]})))
+
+(defn income-by-period [ds tenant-id from-date to-date]
+  (jdbc/execute! ds
+    (sql/format {:select   [[[:date-trunc "month" :payment-date] :month]
+                            [[:sum :interest-portion] :interest-income]
+                            [[:sum :principal-portion] :principal-collected]
+                            [[:count :id] :payment-count]]
+                 :from     [:payments]
+                 :where    [:and
+                            [:exists {:select [:id] :from [:loans]
+                                      :where  [:and [:= :loans.id :payments.loan-id]
+                                                    [:= :loans.tenant-id tenant-id]]}]
+                            [:= :reversed false]
+                            [:>= :payment-date from-date]
+                            [:<= :payment-date to-date]]
+                 :group-by [[:date-trunc "month" :payment-date]]
+                 :order-by [[[:date-trunc "month" :payment-date] :asc]]})))
+
+(defn collections-performance [ds tenant-id from-date to-date]
+  (jdbc/execute! ds
+    (sql/format {:select   [[[:date-trunc "month" :ca.recorded-at] :month]
+                            [:ca.activity-type]
+                            [[:count :ca.id] :count]]
+                 :from     [[:collection-activities :ca]]
+                 :join     [[:collection-cases :cc] [:= :ca.case-id :cc.id]]
+                 :where    [:and [:= :cc.tenant-id tenant-id]
+                                 [:>= :ca.recorded-at from-date]
+                                 [:<= :ca.recorded-at to-date]]
+                 :group-by [[:date-trunc "month" :ca.recorded-at] :ca.activity-type]
+                 :order-by [[[:date-trunc "month" :ca.recorded-at] :asc]]})))
