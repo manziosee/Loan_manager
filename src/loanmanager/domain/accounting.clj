@@ -8,39 +8,35 @@
    :reference-id   ref-id
    :lines          lines})
 
-(defn- debit  [account-code amount currency] {:account-code account-code :debit amount  :credit 0      :currency currency})
-(defn- credit [account-code amount currency] {:account-code account-code :debit 0       :credit amount :currency currency})
+(defn- debit  [account-code amount currency] {:account-code account-code :debit amount :credit 0      :currency currency})
+(defn- credit [account-code amount currency] {:account-code account-code :debit 0      :credit amount :currency currency})
 
-;; Account codes (configured per tenant in chart_of_accounts)
-(def LOANS-RECEIVABLE  "1100")
-(def CASH-AT-BANK      "1010")
-(def INTEREST-INCOME   "4100")
-(def PROCESSING-FEES   "4200")
-(def INTEREST-RECEIVABLE "1200")
+(def LOANS-RECEIVABLE "1100")
+(def CASH-AT-BANK     "1010")
+(def INTEREST-INCOME  "4100")
+(def PROCESSING-FEES  "4200")
 
 (defn disbursement-entry
   "Debit: Loans Receivable | Credit: Cash"
-  [{:keys [loan-id amount currency]}]
-  (entry (str "Loan disbursement " loan-id)
-         :disbursement loan-id
+  [{:keys [amount currency] :as evt}]
+  (entry (str "Loan disbursement " (:loan-id evt))
+         :disbursement (:loan-id evt)
          [(debit  LOANS-RECEIVABLE amount currency)
           (credit CASH-AT-BANK     amount currency)]))
 
 (defn payment-entry
   "Debit: Cash | Credit: Loans Receivable (principal) + Interest Income"
-  [{:keys [loan-id payment-id principal-portion interest-portion currency]}]
+  [{:keys [payment-id principal-portion interest-portion currency] :as evt}]
   (entry (str "Loan payment " payment-id)
          :payment payment-id
          (cond-> [(debit CASH-AT-BANK (+ principal-portion interest-portion) currency)]
-           (pos? principal-portion)
-           (conj (credit LOANS-RECEIVABLE  principal-portion currency))
-           (pos? interest-portion)
-           (conj (credit INTEREST-INCOME   interest-portion  currency)))))
+           (pos? principal-portion) (conj (credit LOANS-RECEIVABLE principal-portion currency))
+           (pos? interest-portion)  (conj (credit INTEREST-INCOME  interest-portion  currency)))))
 
 (defn processing-fee-entry
-  [{:keys [loan-id amount currency]}]
-  (entry (str "Processing fee " loan-id)
-         :fee loan-id
+  [{:keys [amount currency] :as evt}]
+  (entry (str "Processing fee " (:loan-id evt))
+         :fee (:loan-id evt)
          [(debit  CASH-AT-BANK    amount currency)
           (credit PROCESSING-FEES amount currency)]))
 

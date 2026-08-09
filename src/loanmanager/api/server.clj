@@ -8,6 +8,7 @@
             [reitit.swagger :as swagger]
             [reitit.swagger-ui :as swagger-ui]
             [muuntaja.core :as m]
+            [loanmanager.api.schemas :as schemas]
             [loanmanager.security.middleware :as sec]
             [loanmanager.api.routes.auth :as auth-routes]
             [loanmanager.api.routes.customers :as customer-routes]
@@ -24,8 +25,7 @@
         sw-config  (:swagger config)]
     (ring/ring-handler
      (ring/router
-      [;; ── Swagger spec ──────────────────────────────────────────────────────
-       ["/swagger.json"
+      [["/swagger.json"
         {:get {:no-doc  true
                :swagger {:info {:title       (:title sw-config)
                                 :description (:description sw-config)
@@ -37,19 +37,24 @@
                           :security [{:BearerAuth []}]}
                :handler (swagger/create-swagger-handler)}}]
 
-       ;; ── Public routes (no auth required) ──────────────────────────────────
+       ;; Public routes
        ["/api/v1"
         (auth-routes/routes ds config)
         ["/loans/simulate"
          {:post {:summary    "Simulate repayment schedule — all methods (public)"
                  :tags       ["Repayment Engine" "Tools"]
-                 :parameters {:body loanmanager.api.schemas/SimulateRequest}
-                 :handler    (fn [req]
-                               ((-> (repayment-routes/routes ds bus)
-                                    (->> (filter #(= "/loans/simulate" (first %))))
-                                    first second :post :handler) req))}}]]
+                 :parameters {:body schemas/SimulateRequest}
+                 :handler    (fn [{:keys [body-params]}]
+                               (let [{:keys [principal annual-rate months]} body-params
+                                     schedule (loanmanager.domain.finance/build-schedule
+                                                {:method          :reducing-balance
+                                                 :principal       principal
+                                                 :annual-rate     (/ annual-rate 100)
+                                                 :duration-months months})
+                                     summary  (loanmanager.domain.finance/schedule-summary schedule principal)]
+                                 {:status 200 :body {:summary summary :schedule schedule}}))}}]]
 
-       ;; ── Protected routes ──────────────────────────────────────────────────
+       ;; Protected routes
        ["/api/v1"
         {:middleware [[sec/wrap-authentication sec-config]
                       sec/wrap-require-auth

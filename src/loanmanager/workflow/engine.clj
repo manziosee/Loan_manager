@@ -1,4 +1,4 @@
-(ns loanmanager.domain.workflow
+(ns loanmanager.workflow.engine
   "Configurable approval workflow engine.
    Workflow steps are derived from product approval-rules config.")
 

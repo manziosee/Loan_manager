@@ -5,12 +5,10 @@
             [loanmanager.db.collections :as coll-db]
             [loanmanager.db.audit :as audit]
             [loanmanager.domain.collections :as collections]
-            [loanmanager.domain.delinquency :as delinquency]
             [loanmanager.security.rbac :as rbac]))
 
 (defn routes [ds]
-  [;; ── List collection cases ─────────────────────────────────────────────────
-   ["/collections"
+  [["/collections"
     {:get {:summary    "List collection cases with loan and customer details"
            :tags       ["Collections"]
            :parameters {:query [:map
@@ -24,7 +22,6 @@
                          {:status 200
                           :body   (coll-db/list-cases ds tenant-id query-params)})}}]
 
-   ;; ── Get case detail (officer view) ───────────────────────────────────────
    ["/collections/:id"
     {:get {:summary    "Get full collection case — officer view with next action"
            :tags       ["Collections"]
@@ -40,8 +37,8 @@
                                customer   (customers-db/find-by-id ds tenant-id
                                                                     (:loans/customer-id loan))
                                summary    (collections/case-summary
-                                            {:customer  customer
-                                             :loan      loan
+                                            {:customer   customer
+                                             :loan       loan
                                              :activities activities
                                              :promises   promises})]
                            {:status 200
@@ -50,7 +47,6 @@
                                      :promises   promises
                                      :summary    summary}}))}}]
 
-   ;; ── Record a collection activity ─────────────────────────────────────────
    ["/collections/:id/activities"
     {:post {:summary    "Record a collection activity (call, SMS, visit, etc.)"
             :tags       ["Collections"]
@@ -73,7 +69,6 @@
                                             :after-state body-params})
                             {:status 201 :body activity}))}}]
 
-   ;; ── Create promise-to-pay ─────────────────────────────────────────────────
    ["/collections/:id/promises"
     {:get  {:summary    "List all promises-to-pay for a case"
             :tags       ["Collections"]
@@ -98,7 +93,6 @@
                                             :promise-amount (:promise-amount body-params)
                                             :status         "pending"
                                             :recorded-by    (:user-id identity)})]
-                            ;; Also log as activity
                             (coll-db/add-activity! ds
                               {:case-id       case-id
                                :activity-type "promise_to_pay"
@@ -107,7 +101,6 @@
                                :recorded-by   (:user-id identity)})
                             {:status 201 :body promise}))}}]
 
-   ;; ── Update promise status ─────────────────────────────────────────────────
    ["/collections/promises/:id"
     {:put {:summary    "Update promise-to-pay status (kept/broken/partial)"
            :tags       ["Collections"]
@@ -115,12 +108,11 @@
                         :body schemas/PromiseUpdate}
            :handler    (fn [{:keys [identity path-params body-params]}]
                          (rbac/require-permission identity :collection/update)
-                         (let [updated (coll-db/update-promise! ds
-                                         (parse-uuid (:id path-params))
-                                         body-params)]
-                           {:status 200 :body updated}))}}]
+                         {:status 200
+                          :body   (coll-db/update-promise! ds
+                                    (parse-uuid (:id path-params))
+                                    body-params)})}}]
 
-   ;; ── Broken promises dashboard ─────────────────────────────────────────────
    ["/collections/broken-promises"
     {:get {:summary    "List all broken promises-to-pay requiring follow-up"
            :tags       ["Collections"]
@@ -129,13 +121,12 @@
                          {:status 200
                           :body   (coll-db/broken-promises ds tenant-id)})}}]
 
-   ;; ── Escalate a case ───────────────────────────────────────────────────────
    ["/collections/:id/escalate"
     {:post {:summary    "Escalate a collection case to a supervisor"
             :tags       ["Collections"]
             :parameters {:path [:map [:id :string]]
                          :body [:map
-                                [:escalate-to UUID-str]
+                                [:escalate-to schemas/UUID-str]
                                 [:reason      :string]]}
             :handler    (fn [{:keys [identity tenant-id path-params body-params]}]
                           (rbac/require-permission identity :collection/update)
@@ -157,7 +148,6 @@
                                             :after-state body-params})
                             {:status 200 :body updated}))}}]
 
-   ;; ── Close a case ─────────────────────────────────────────────────────────
    ["/collections/:id/close"
     {:post {:summary    "Close a resolved collection case"
             :tags       ["Collections"]
@@ -167,8 +157,7 @@
                           (rbac/require-permission identity :collection/update)
                           (let [case-id (parse-uuid (:id path-params))
                                 updated (coll-db/update-case! ds tenant-id case-id
-                                          {:status      "closed"
-                                           :resolved-at [:now]})]
+                                          {:status "closed" :resolved-at [:now]})]
                             (coll-db/add-activity! ds
                               {:case-id       case-id
                                :activity-type "case_note"

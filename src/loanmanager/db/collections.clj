@@ -5,8 +5,6 @@
 
 (defn- case-no [] (str "COL-" (System/currentTimeMillis)))
 
-;; ── Cases ─────────────────────────────────────────────────────────────────────
-
 (defn create-case! [ds case-data]
   (db/execute-one! ds
     (sql/format {:insert-into :collection-cases
@@ -15,15 +13,15 @@
 
 (defn find-case [ds tenant-id id]
   (jdbc/execute-one! ds
-    (sql/format {:select [:cc.* [:l.loan-no :loan-no] [:l.outstanding-principal :outstanding]
-                          [:l.days-overdue :days-overdue] [:l.last-payment-date :last-payment-date]
-                          [:c.first-name :customer-first-name] [:c.last-name :customer-last-name]
-                          [:c.phone :customer-phone] [:c.email :customer-email]
-                          [:c.risk-score :customer-risk-score]]
-                 :from   [[:collection-cases :cc]]
-                 :join   [[:loans :l]     [:= :cc.loan-id :l.id]
-                          [:customers :c] [:= :cc.customer-id :c.id]]
-                 :where  [:and [:= :cc.tenant-id tenant-id] [:= :cc.id id]]})))
+    (sql/format {:select    [:cc.* [:l.loan-no :loan-no] [:l.outstanding-principal :outstanding]
+                             [:l.days-overdue :days-overdue] [:l.last-payment-date :last-payment-date]
+                             [:c.first-name :customer-first-name] [:c.last-name :customer-last-name]
+                             [:c.phone :customer-phone] [:c.email :customer-email]
+                             [:c.risk-score :customer-risk-score]]
+                 :from      [[:collection-cases :cc]]
+                 :join      [[:loans :l]     [:= :cc.loan-id :l.id]
+                             [:customers :c] [:= :cc.customer-id :c.id]]
+                 :where     [:and [:= :cc.tenant-id tenant-id] [:= :cc.id id]]})))
 
 (defn find-case-by-loan [ds tenant-id loan-id]
   (jdbc/execute-one! ds
@@ -38,19 +36,19 @@
 (defn list-cases [ds tenant-id {:keys [status priority assigned-to limit offset]
                                  :or   {limit 20 offset 0}}]
   (jdbc/execute! ds
-    (sql/format (cond-> {:select [:cc.* [:l.loan-no :loan-no]
-                                  [:l.outstanding-principal :outstanding]
-                                  [:l.days-overdue :days-overdue]
-                                  [:c.first-name :customer-first-name]
-                                  [:c.last-name :customer-last-name]
-                                  [:c.phone :customer-phone]]
-                          :from   [[:collection-cases :cc]]
-                          :join   [[:loans :l]     [:= :cc.loan-id :l.id]
-                                   [:customers :c] [:= :cc.customer-id :c.id]]
-                          :where  [:= :cc.tenant-id tenant-id]
+    (sql/format (cond-> {:select   [:cc.* [:l.loan-no :loan-no]
+                                    [:l.outstanding-principal :outstanding]
+                                    [:l.days-overdue :days-overdue]
+                                    [:c.first-name :customer-first-name]
+                                    [:c.last-name :customer-last-name]
+                                    [:c.phone :customer-phone]]
+                          :from     [[:collection-cases :cc]]
+                          :join     [[:loans :l]     [:= :cc.loan-id :l.id]
+                                     [:customers :c] [:= :cc.customer-id :c.id]]
+                          :where    [:= :cc.tenant-id tenant-id]
                           :order-by [[:cc.priority :desc] [:l.days-overdue :desc]]
-                          :limit  limit
-                          :offset offset}
+                          :limit    limit
+                          :offset   offset}
                   status      (update :where conj [:= :cc.status status])
                   priority    (update :where conj [:= :cc.priority priority])
                   assigned-to (update :where conj [:= :cc.assigned-to (parse-uuid assigned-to)])))))
@@ -62,8 +60,6 @@
                  :where     [:and [:= :tenant-id tenant-id] [:= :id id]]
                  :returning [:*]})))
 
-;; ── Activities ────────────────────────────────────────────────────────────────
-
 (defn add-activity! [ds activity]
   (db/execute-one! ds
     (sql/format {:insert-into :collection-activities
@@ -72,13 +68,11 @@
 
 (defn case-activities [ds case-id]
   (jdbc/execute! ds
-    (sql/format {:select   [:ca.* [:u.full-name :officer-name]]
-                 :from     [[:collection-activities :ca]]
+    (sql/format {:select    [:ca.* [:u.full-name :officer-name]]
+                 :from      [[:collection-activities :ca]]
                  :left-join [[:users :u] [:= :ca.recorded-by :u.id]]
-                 :where    [:= :ca.case-id case-id]
-                 :order-by [[:ca.recorded-at :desc]]})))
-
-;; ── Promises-to-pay ───────────────────────────────────────────────────────────
+                 :where     [:= :ca.case-id case-id]
+                 :order-by  [[:ca.recorded-at :desc]]})))
 
 (defn create-promise! [ds promise-data]
   (db/execute-one! ds
@@ -100,8 +94,9 @@
                  :where     [:= :id id]
                  :returning [:*]})))
 
-(defn broken-promises [ds tenant-id]
+(defn broken-promises
   "Find promises past their due date with no payment recorded."
+  [ds tenant-id]
   (jdbc/execute! ds
     (sql/format {:select [:p.* [:cc.assigned-to :officer-id]
                           [:l.loan-no :loan-no]
@@ -116,8 +111,6 @@
                           [:= :cc.tenant-id tenant-id]
                           [:= :p.status "pending"]
                           [:< :p.promise-date [:cast [:now] :date]]]})))
-
-;; ── Delinquency log ───────────────────────────────────────────────────────────
 
 (defn log-delinquency! [ds entry]
   (db/execute-one! ds

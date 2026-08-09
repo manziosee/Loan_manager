@@ -3,8 +3,6 @@
             [honey.sql :as sql]
             [loanmanager.db.connection :as db]))
 
-;; ── Applications ─────────────────────────────────────────────────────────────
-
 (defn create-application! [ds application]
   (db/execute-one! ds
     (sql/format {:insert-into :loan-applications
@@ -27,18 +25,16 @@
 (defn list-applications [ds tenant-id {:keys [status limit offset]
                                         :or   {limit 20 offset 0}}]
   (jdbc/execute! ds
-    (sql/format (cond-> {:select [:la.* [:c.first-name :customer-first-name]
-                                  [:c.last-name :customer-last-name]
-                                  [:p.name :product-name]]
-                          :from   [[:loan-applications :la]]
-                          :join   [[:customers :c]     [:= :la.customer-id :c.id]
-                                   [:loan-products :p] [:= :la.product-id :p.id]]
-                          :where  [:= :la.tenant-id tenant-id]
-                          :limit  limit
-                          :offset offset}
+    (sql/format (cond-> {:select   [:la.* [:c.first-name :customer-first-name]
+                                    [:c.last-name :customer-last-name]
+                                    [:p.name :product-name]]
+                          :from     [[:loan-applications :la]]
+                          :join     [[:customers :c]     [:= :la.customer-id :c.id]
+                                     [:loan-products :p] [:= :la.product-id :p.id]]
+                          :where    [:= :la.tenant-id tenant-id]
+                          :limit    limit
+                          :offset   offset}
                   status (update :where conj [:= :la.status (name status)])))))
-
-;; ── Approval steps ────────────────────────────────────────────────────────────
 
 (defn add-approval-step! [ds step]
   (db/execute-one! ds
@@ -52,8 +48,6 @@
                  :from     [:approval-steps]
                  :where    [:= :application-id application-id]
                  :order-by [[:step-order :asc]]})))
-
-;; ── Loans ─────────────────────────────────────────────────────────────────────
 
 (defn create-loan! [ds loan]
   (db/execute-one! ds
@@ -76,14 +70,10 @@
 
 (defn customer-loans [ds tenant-id customer-id]
   (jdbc/execute! ds
-    (sql/format {:select [:*]
-                 :from   [:loans]
-                 :where  [:and
-                          [:= :tenant-id tenant-id]
-                          [:= :customer-id customer-id]]
+    (sql/format {:select   [:*]
+                 :from     [:loans]
+                 :where    [:and [:= :tenant-id tenant-id] [:= :customer-id customer-id]]
                  :order-by [[:created-at :desc]]})))
-
-;; ── Repayment schedule ────────────────────────────────────────────────────────
 
 (defn insert-schedule! [ds loan-id installments]
   (db/execute! ds
@@ -106,8 +96,6 @@
                  :order-by [[:due-date :asc]]
                  :limit    1})))
 
-;; ── Payments ──────────────────────────────────────────────────────────────────
-
 (defn record-payment! [ds payment]
   (db/execute-one! ds
     (sql/format {:insert-into :payments
@@ -120,8 +108,6 @@
                  :from     [:payments]
                  :where    [:and [:= :loan-id loan-id] [:= :reversed false]]
                  :order-by [[:payment-date :desc]]})))
-
-;; ── Overdue loans (for delinquency job) ──────────────────────────────────────
 
 (defn overdue-loans [ds tenant-id]
   (jdbc/execute! ds
@@ -144,24 +130,25 @@
 (defn update-delinquency! [ds tenant-id loan-id days-overdue bucket]
   (db/execute-one! ds
     (sql/format {:update    :loans
-                 :set       {:days-overdue      days-overdue
+                 :set       {:days-overdue       days-overdue
                              :delinquency-bucket (name bucket)
-                             :status            (case bucket
-                                                  :npl "npl"
-                                                  :current "active"
-                                                  "overdue")
-                             :updated-at        [:now]}
+                             :status             (case bucket
+                                                   :npl     "npl"
+                                                   :current "active"
+                                                   "overdue")
+                             :updated-at         [:now]}
                  :where     [:and [:= :tenant-id tenant-id] [:= :id loan-id]]
                  :returning [:id :days-overdue :delinquency-bucket :status]})))
 
-(defn prepayment-settlement [ds tenant-id loan-id]
+(defn prepayment-settlement
   "Fetch all data needed for early repayment calculation."
+  [ds tenant-id loan-id]
   (jdbc/execute-one! ds
-    (sql/format {:select [:l.* [:p.name :product-name]
-                          [[:coalesce [:sum :py.amount] 0] :total-paid]]
-                 :from   [[:loans :l]]
-                 :join   [[:loan-products :p] [:= :l.product-id :p.id]]
+    (sql/format {:select    [:l.* [:p.name :product-name]
+                             [[:coalesce [:sum :py.amount] 0] :total-paid]]
+                 :from      [[:loans :l]]
+                 :join      [[:loan-products :p] [:= :l.product-id :p.id]]
                  :left-join [[:payments :py] [:and [:= :py.loan-id :l.id]
                                                    [:= :py.reversed false]]]
-                 :where  [:and [:= :l.tenant-id tenant-id] [:= :l.id loan-id]]
-                 :group-by [:l.id :p.name]})))
+                 :where     [:and [:= :l.tenant-id tenant-id] [:= :l.id loan-id]]
+                 :group-by  [:l.id :p.name]})))

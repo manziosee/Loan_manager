@@ -17,7 +17,7 @@
   (let [config (load-config)]
     (log/info "Starting LoanOS...")
     (let [ds      (db/init-pool! (:database config))
-          _       (migrations/run! ds)
+          _       (migrations/migrate! ds)
           bus     (events/start! (:events config))
           handler (server/create-handler config ds bus)
           srv     (server/start-server! handler (get-in config [:server :port]))]

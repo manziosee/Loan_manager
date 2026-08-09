@@ -1,6 +1,5 @@
 (ns loanmanager.security.jwt
   (:require [buddy.sign.jwt :as jwt]
-            [buddy.core.keys :as keys]
             [clojure.tools.logging :as log]
             [tick.core :as t]))
 

@@ -1,5 +1,4 @@
-(ns loanmanager.api.schemas
-  (:require [malli.core :as m]))
+(ns loanmanager.api.schemas)
 
 ;; ── Primitives ────────────────────────────────────────────────────────────────
 (def UUID-str [:re #"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"])
