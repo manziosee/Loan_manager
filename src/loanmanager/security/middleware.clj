@@ -1,14 +1,20 @@
 (ns loanmanager.security.middleware
   (:require [clojure.tools.logging :as log]
-            [loanmanager.security.jwt :as jwt]))
+            [loanmanager.security.jwt :as jwt]
+            [loanmanager.security.token-store :as token-store]))
 
 (defn wrap-authentication [handler config]
   (fn [request]
     (let [auth-header (get-in request [:headers "authorization"])
           token       (when (and auth-header (.startsWith auth-header "Bearer "))
                         (subs auth-header 7))
-          identity    (when token (jwt/token->identity token config))]
-      (handler (assoc request :identity identity)))))
+          identity    (when token (jwt/token->identity token config))
+          ;; reject blacklisted tokens
+          identity    (when (and identity
+                                 (not (token-store/blacklisted?
+                                        (get-in identity [:claims :sub]))))
+                        identity)]
+      (handler (assoc request :identity identity :raw-token token)))))
 
 (defn wrap-require-auth [handler]
   (fn [request]

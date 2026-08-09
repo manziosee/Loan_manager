@@ -124,6 +124,33 @@
    [:payment-method    {:optional true} :string]
    [:reference         {:optional true} :string]])
 
+;; ── Users ────────────────────────────────────────────────────────────────────
+(def UserCreate
+  [:map
+   [:email     [:string {:min 3 :max 255}]]
+   [:full-name [:string {:min 1 :max 200}]]
+   [:password  [:string {:min 8 :max 100}]]
+   [:role-id   UUID-str]])
+
+(def UserUpdate
+  [:map
+   [:full-name {:optional true} [:string {:min 1 :max 200}]]
+   [:role-id   {:optional true} UUID-str]
+   [:active    {:optional true} :boolean]])
+
+(def ChangePasswordRequest
+  [:map
+   [:current-password [:string {:min 6 :max 100}]]
+   [:new-password     [:string {:min 8 :max 100}]]])
+
+(def ResetPasswordRequest
+  [:map
+   [:new-password [:string {:min 8 :max 100}]]])
+
+(def RefreshRequest
+  [:map
+   [:refresh-token :string]])
+
 ;; ── Collections ──────────────────────────────────────────────────────────────
 (def ActivityCreate
   [:map

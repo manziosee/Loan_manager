@@ -21,10 +21,21 @@
       (log/debug "JWT verification failed:" (.getMessage e))
       {:ok false :error (.getMessage e)})))
 
-(defn token->identity [token config]
+(defn token->identity
+  "Returns identity map + raw :claims for blacklist checking."
+  [token config]
   (let [{:keys [ok claims]} (verify-token token config)]
     (when ok
       {:user-id   (java.util.UUID/fromString (:sub claims))
        :tenant-id (java.util.UUID/fromString (:tenant-id claims))
        :role      (keyword (:role claims))
-       :email     (:email claims)})))
+       :email     (:email claims)
+       :claims    claims})))
+
+(defn generate-refresh-token [user {:keys [jwt-secret]}]
+  (jwt/sign {:sub       (str (:id user))
+             :tenant-id (str (:tenant-id user))
+             :type      "refresh"
+             :exp       (-> (t/now) (t/>> (t/new-duration 30 :days)) t/inst)
+             :iat       (t/inst (t/now))}
+            jwt-secret {:alg :hs256}))

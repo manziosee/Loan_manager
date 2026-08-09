@@ -35,15 +35,14 @@
 
    :auditor         #{:customer/read    :application/read  :loan/read
                       :payment/read     :ledger/read       :audit/read
-                      :schedule/read    :collection/read   :portfolio/read}
+                      :schedule/read    :collection/read   :portfolio/read
+                      :user/read}
 
-   :admin           :all})
+   :admin           #{:all :user/read :user/manage}}
 
-(defn has-permission?
-  "Returns true if the role has the given permission."
-  [role permission]
+(defn has-permission? [role permission]
   (let [perms (get permissions role #{})]
-    (or (= perms :all)
+    (or (contains? perms :all)
         (contains? perms permission))))
 
 (defn require-permission
