@@ -26,7 +26,7 @@
 
 (defn payment-entry
   "Debit: Cash | Credit: Loans Receivable (principal) + Interest Income"
-  [{:keys [payment-id principal-portion interest-portion currency] :as evt}]
+  [{:keys [payment-id principal-portion interest-portion currency]}]
   (entry (str "Loan payment " payment-id)
          :payment payment-id
          (cond-> [(debit CASH-AT-BANK (+ principal-portion interest-portion) currency)]
@@ -34,9 +34,9 @@
            (pos? interest-portion)  (conj (credit INTEREST-INCOME  interest-portion  currency)))))
 
 (defn processing-fee-entry
-  [{:keys [amount currency] :as evt}]
-  (entry (str "Processing fee " (:loan-id evt))
-         :fee (:loan-id evt)
+  [{:keys [loan-id amount currency]}]
+  (entry (str "Processing fee " loan-id)
+         :fee loan-id
          [(debit  CASH-AT-BANK    amount currency)
           (credit PROCESSING-FEES amount currency)]))
 

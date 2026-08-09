@@ -19,11 +19,7 @@
                   status      (update :where conj [:= :l.status status])
                   customer-id (update :where conj [:= :l.customer-id customer-id])))))
 
-
-  (db/execute-one! ds
-    (sql/format {:insert-into :loan-applications
-                 :values      [application]
-                 :returning   [:*]})))
+(defn create-application! [ds application]
 
 (defn find-application [ds tenant-id id]
   (jdbc/execute-one! ds

@@ -18,8 +18,8 @@
 
 (defn routes [ds config]
   (let [sec-config (:security config)]
-    [[\"/auth\"
-      [\"/login\"
+    [["/auth"
+      ["/login"
        {:post {:summary    "Authenticate and receive JWT"
                :tags       ["Authentication"]
                :parameters {:body schemas/LoginRequest}
@@ -42,7 +42,7 @@
                                              :expires-in    (* (get-in config [:security :jwt-expiry-hours]) 3600)}})
                                  {:status 401 :body {:error "Invalid credentials"}})))}}]
 
-      [\"/logout"
+      ["/logout"
        {:post {:summary    "Invalidate the current access token"
                :tags       ["Authentication"]
                :middleware [[sec/wrap-authentication sec-config]
@@ -51,7 +51,7 @@
                              (token-store/blacklist-token! (:claims identity))
                              {:status 200 :body {:message "Logged out"}})}}]
 
-      [\"/refresh"
+      ["/refresh"
        {:post {:summary    "Exchange a refresh token for a new access token"
                :tags       ["Authentication"]
                :parameters {:body schemas/RefreshRequest}
@@ -64,17 +64,17 @@
                                    (if user
                                      {:status 200
                                       :body   {:access-token (jwt/generate-token
-                                                               {:id          (:users/id user)
-                                                                :tenant-id   (:users/tenant-id user)
-                                                                :role-name   (:users/role-name user)
-                                                                :email       (:users/email user)}
+                                                               {:id        (:users/id user)
+                                                                :tenant-id (:users/tenant-id user)
+                                                                :role-name (:users/role-name user)
+                                                                :email     (:users/email user)}
                                                                sec-config)
                                                :token-type   "Bearer"
                                                :expires-in   (* (get-in config [:security :jwt-expiry-hours]) 3600)}}
                                      {:status 401 :body {:error "User not found"}}))
                                  {:status 401 :body {:error "Invalid or expired refresh token"}})))}}]
 
-      [\"/change-password"
+      ["/change-password"
        {:post {:summary    "Change your own password"
                :tags       ["Authentication"]
                :middleware [[sec/wrap-authentication sec-config]
@@ -87,7 +87,6 @@
                                  (do
                                    (users-db/update! ds (:tenant-id identity) (:user-id identity)
                                      {:password-hash (hashers/derive (:new-password body-params))})
-                                   ;; invalidate current token so re-login is required
                                    (token-store/blacklist-token! (:claims identity))
                                    {:status 200 :body {:message "Password changed. Please log in again."}})
                                  {:status 422 :body {:error "Current password is incorrect"}})))}}]]]))
