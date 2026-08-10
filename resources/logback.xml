@@ -1,11 +1,33 @@
 <configuration>
-  <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+  <!-- Plain console for local dev -->
+  <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
     <encoder>
       <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
     </encoder>
   </appender>
-  <root level="INFO">
-    <appender-ref ref="STDOUT"/>
-  </root>
-  <logger name="loanmanager" level="DEBUG"/>
+
+  <!-- JSON structured output for production (activated via LOG_FORMAT=json env var) -->
+  <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+      <pattern>{"ts":"%d{yyyy-MM-dd'T'HH:mm:ss.SSSZ}","level":"%level","logger":"%logger{36}","thread":"%thread","msg":"%replace(%msg){'\"','\\\"'}","mdc":{%mdc}}%n</pattern>
+    </encoder>
+  </appender>
+
+  <if condition='property("LOG_FORMAT").equals("json")'>
+    <then>
+      <root level="INFO">
+        <appender-ref ref="JSON"/>
+      </root>
+    </then>
+    <else>
+      <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+      </root>
+    </else>
+  </if>
+
+  <logger name="loanmanager"          level="DEBUG"/>
+  <logger name="com.zaxxer.hikari"    level="WARN"/>
+  <logger name="org.eclipse.jetty"    level="WARN"/>
+  <logger name="ragtime"              level="INFO"/>
 </configuration>

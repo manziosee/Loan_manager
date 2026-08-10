@@ -1,0 +1,12 @@
+.git
+.github
+.gitignore
+.clj-kondo
+.lsp
+.calva
+target/
+*.md
+test/
+dev/
+docker-compose*.yml
+Makefile

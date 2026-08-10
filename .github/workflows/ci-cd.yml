@@ -4,18 +4,72 @@ on:
   push:
     branches: [main, develop]
   pull_request:
-    branches: [main]
+    branches: [main, develop]
 
 env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  REGISTRY:        ghcr.io
+  IMAGE_NAME:      ${{ github.repository }}
+  CLJ_KONDO_VER:   "2024.09.27"
+  JAVA_VERSION:    "21"
 
 jobs:
-  # ── 1. Test ──────────────────────────────────────────────────────────────────
+  # ── 1. Lint ───────────────────────────────────────────────────────────────────
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Cache Maven + Clojure deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.m2/repository
+            ~/.gitlibs
+            ~/.deps.clj
+          key: ${{ runner.os }}-clj-${{ hashFiles('deps.edn') }}
+          restore-keys: ${{ runner.os }}-clj-
+
+      - name: Cache clj-kondo binary
+        id: kondo-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/bin/clj-kondo
+          key: clj-kondo-${{ env.CLJ_KONDO_VER }}
+
+      - name: Install Clojure CLI
+        run: |
+          curl -sL https://download.clojure.org/install/linux-install.sh -o linux-install.sh
+          chmod +x linux-install.sh
+          sudo ./linux-install.sh
+
+      - name: Install clj-kondo
+        if: steps.kondo-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/.local/bin
+          curl -sLO https://github.com/clj-kondo/clj-kondo/releases/download/v${{ env.CLJ_KONDO_VER }}/clj-kondo-${{ env.CLJ_KONDO_VER }}-linux-amd64.zip
+          unzip clj-kondo-${{ env.CLJ_KONDO_VER }}-linux-amd64.zip
+          mv clj-kondo ~/.local/bin/
+          chmod +x ~/.local/bin/clj-kondo
+
+      - name: Add ~/.local/bin to PATH
+        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Verify clj-kondo
+        run: clj-kondo --version
+
+      - name: Run clj-kondo
+        run: clj-kondo --lint src
+
+  # ── 2. Test ───────────────────────────────────────────────────────────────────
   test:
     name: Test
     runs-on: ubuntu-latest
-
     services:
       postgres:
         image: postgres:16-alpine
@@ -37,9 +91,9 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "21"
+          java-version: ${{ env.JAVA_VERSION }}
 
-      - name: Cache Maven deps
+      - name: Cache Maven + Clojure deps
         uses: actions/cache@v4
         with:
           path: |
@@ -66,50 +120,20 @@ jobs:
           JWT_SECRET:   "test-secret-min-32-chars-for-ci-pipeline"
         run: clojure -M:test
 
-  # ── 2. Lint ───────────────────────────────────────────────────────────────────
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
-
-      - name: Install Clojure CLI
-        run: |
-          curl -sL https://download.clojure.org/install/linux-install.sh -o linux-install.sh
-          chmod +x linux-install.sh
-          sudo ./linux-install.sh
-
-      - name: Install clj-kondo
-        run: |
-          curl -sLO https://github.com/clj-kondo/clj-kondo/releases/download/v2024.09.27/clj-kondo-2024.09.27-linux-amd64.zip
-          unzip clj-kondo-2024.09.27-linux-amd64.zip
-          sudo mv clj-kondo /usr/local/bin/
-          clj-kondo --version
-
-      - name: Run clj-kondo
-        run: clj-kondo --lint src
-
-  # ── 3. Build uberjar ─────────────────────────────────────────────────────────
+  # ── 3. Build uberjar ──────────────────────────────────────────────────────────
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: [test, lint]
-
+    needs: [lint, test]
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "21"
+          java-version: ${{ env.JAVA_VERSION }}
 
-      - name: Cache Maven deps
+      - name: Cache Maven + Clojure deps
         uses: actions/cache@v4
         with:
           path: |
@@ -128,6 +152,16 @@ jobs:
       - name: Build uberjar
         run: clojure -T:build uber
 
+      - name: Print jar size
+        run: |
+          SIZE=$(du -sh target/loanmanager.jar | cut -f1)
+          echo "### Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Jar size | $SIZE |" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | ${{ github.sha }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Branch | ${{ github.ref_name }} |" >> $GITHUB_STEP_SUMMARY
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -141,10 +175,10 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
-
     permissions:
       contents: read
       packages: write
+      security-events: write
 
     steps:
       - uses: actions/checkout@v4
@@ -172,10 +206,11 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=ref,event=branch
-            type=sha,prefix=sha-
+            type=sha,prefix=sha-,format=short
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
       - name: Build and push Docker image
+        id: docker-build
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -184,8 +219,32 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
 
-  # ── 5. Deploy to staging (develop branch) ────────────────────────────────────
+      - name: Docker image summary
+        run: |
+          echo "### Docker Image" >> $GITHUB_STEP_SUMMARY
+          echo "| Tag | Digest |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| latest | ${{ steps.docker-build.outputs.digest }} |" >> $GITHUB_STEP_SUMMARY
+
+      - name: Run Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          exit-code: 0
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
+
+  # ── 5. Deploy → Staging ───────────────────────────────────────────────────────
   deploy-staging:
     name: Deploy → Staging
     runs-on: ubuntu-latest
@@ -214,9 +273,18 @@ jobs:
               -e DB_USER="${{ secrets.STAGING_DB_USER }}" \
               -e DB_PASS="${{ secrets.STAGING_DB_PASS }}" \
               -e JWT_SECRET="${{ secrets.STAGING_JWT_SECRET }}" \
+              -e LOG_FORMAT="json" \
               ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:develop
 
-  # ── 6. Deploy to production (main branch) ────────────────────────────────────
+      - name: Smoke test staging
+        run: |
+          sleep 15
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            https://staging.loanmanager.example.com/api/v1/health/live)
+          echo "Health check status: $STATUS"
+          [ "$STATUS" = "200" ] || exit 1
+
+  # ── 6. Deploy → Production ────────────────────────────────────────────────────
   deploy-production:
     name: Deploy → Production
     runs-on: ubuntu-latest
@@ -245,8 +313,23 @@ jobs:
               -e DB_USER="${{ secrets.PROD_DB_USER }}" \
               -e DB_PASS="${{ secrets.PROD_DB_PASS }}" \
               -e JWT_SECRET="${{ secrets.PROD_JWT_SECRET }}" \
+              -e LOG_FORMAT="json" \
               ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
 
-      - name: Notify deployment
+      - name: Smoke test production
+        run: |
+          sleep 15
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            https://api.loanmanager.example.com/api/v1/health/live)
+          echo "Health check status: $STATUS"
+          [ "$STATUS" = "200" ] || exit 1
+
+      - name: Deployment summary
         if: always()
-        run: echo "Production deployment ${{ job.status }} for ${{ github.sha }}"
+        run: |
+          echo "### Production Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Status | ${{ job.status }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | ${{ github.sha }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Actor  | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY

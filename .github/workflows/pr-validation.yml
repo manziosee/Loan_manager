@@ -4,6 +4,10 @@ on:
   pull_request:
     branches: [main, develop]
 
+env:
+  CLJ_KONDO_VER: "2024.09.27"
+  JAVA_VERSION:  "21"
+
 jobs:
   validate:
     name: Validate PR
@@ -30,9 +34,9 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "21"
+          java-version: ${{ env.JAVA_VERSION }}
 
-      - name: Cache Maven deps
+      - name: Cache Maven + Clojure deps
         uses: actions/cache@v4
         with:
           path: |
@@ -42,6 +46,13 @@ jobs:
           key: ${{ runner.os }}-clj-${{ hashFiles('deps.edn') }}
           restore-keys: ${{ runner.os }}-clj-
 
+      - name: Cache clj-kondo binary
+        id: kondo-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/bin/clj-kondo
+          key: clj-kondo-${{ env.CLJ_KONDO_VER }}
+
       - name: Install Clojure CLI
         run: |
           curl -sL https://download.clojure.org/install/linux-install.sh -o linux-install.sh
@@ -49,16 +60,21 @@ jobs:
           sudo ./linux-install.sh
 
       - name: Install clj-kondo
+        if: steps.kondo-cache.outputs.cache-hit != 'true'
         run: |
-          curl -sLO https://github.com/clj-kondo/clj-kondo/releases/download/v2024.09.27/clj-kondo-2024.09.27-linux-amd64.zip
-          unzip clj-kondo-2024.09.27-linux-amd64.zip
-          sudo mv clj-kondo /usr/local/bin/
-          clj-kondo --version
+          mkdir -p ~/.local/bin
+          curl -sLO https://github.com/clj-kondo/clj-kondo/releases/download/v${{ env.CLJ_KONDO_VER }}/clj-kondo-${{ env.CLJ_KONDO_VER }}-linux-amd64.zip
+          unzip clj-kondo-${{ env.CLJ_KONDO_VER }}-linux-amd64.zip
+          mv clj-kondo ~/.local/bin/
+          chmod +x ~/.local/bin/clj-kondo
+
+      - name: Add ~/.local/bin to PATH
+        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Download dependencies
         run: clojure -P
 
-      - name: Run clj-kondo lint
+      - name: Lint
         run: clj-kondo --lint src
 
       - name: Run tests
@@ -71,3 +87,13 @@ jobs:
 
       - name: Verify build compiles
         run: clojure -T:build uber
+
+      - name: PR summary
+        if: always()
+        run: |
+          echo "### PR Validation Results" >> $GITHUB_STEP_SUMMARY
+          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Lint  | ${{ job.status }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tests | ${{ job.status }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build | ${{ job.status }} |" >> $GITHUB_STEP_SUMMARY
