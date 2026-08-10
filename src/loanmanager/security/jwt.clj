@@ -3,8 +3,11 @@
             [clojure.tools.logging :as log]
             [tick.core :as t]))
 
+(defn- new-jti [] (str (java.util.UUID/randomUUID)))
+
 (defn- claims [user expiry-hours]
   {:sub       (str (:id user))
+   :jti       (new-jti)
    :tenant-id (str (:tenant-id user))
    :role      (str (:role-name user))
    :email     (:email user)
@@ -34,6 +37,7 @@
 
 (defn generate-refresh-token [user {:keys [jwt-secret]}]
   (jwt/sign {:sub       (str (:id user))
+             :jti       (new-jti)
              :tenant-id (str (:tenant-id user))
              :type      "refresh"
              :exp       (-> (t/now) (t/>> (t/new-duration 30 :days)) t/inst)

@@ -1,27 +1,23 @@
 (ns loanmanager.security.token-store
-  "In-memory JWT blacklist. Tokens are stored by their jti/sub+exp key
-   and pruned lazily on each check to avoid unbounded growth.")
+  "JWT blacklist backed by in-memory atom (dev) or DB (prod).
+   Uses :jti claim for per-token revocation — not :sub.")
 
 (defonce ^:private blacklist (atom {}))
 
-(defn blacklist! [token-key expires-at]
-  (swap! blacklist assoc token-key expires-at))
+(defn blacklist! [jti expires-at-ms]
+  (swap! blacklist assoc jti expires-at-ms))
 
-(defn blacklisted? [token-key]
-  (let [now   (System/currentTimeMillis)
-        entry (get @blacklist token-key)]
-    (when entry
-      ;; prune expired entries lazily
-      (when (< now entry)
-        true))))
+(defn blacklisted? [jti]
+  (when-let [exp (get @blacklist jti)]
+    (< (System/currentTimeMillis) exp)))
 
 (defn- prune! []
   (let [now (System/currentTimeMillis)]
     (swap! blacklist (fn [m] (into {} (filter #(> (val %) now) m))))))
 
 (defn blacklist-token!
-  "Blacklist a decoded claims map until its :exp timestamp."
-  [{:keys [sub exp]}]
-  (let [exp-ms (long (* exp 1000))]
+  "Blacklist a decoded claims map by its :jti until :exp."
+  [{:keys [jti exp]}]
+  (when jti
     (prune!)
-    (blacklist! sub exp-ms)))
+    (blacklist! jti (long (* exp 1000)))))

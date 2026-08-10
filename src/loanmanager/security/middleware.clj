@@ -3,16 +3,35 @@
             [loanmanager.security.jwt :as jwt]
             [loanmanager.security.token-store :as token-store]))
 
+;; ── Login rate limiter (in-memory, per email) ─────────────────────────────────
+(defonce ^:private login-attempts (atom {}))
+(def ^:private max-attempts 10)
+(def ^:private window-ms    (* 15 60 1000))  ; 15 minutes
+
+(defn- count-recent-attempts [email]
+  (let [now    (System/currentTimeMillis)
+        cutoff (- now window-ms)]
+    (count (filter #(> % cutoff) (get @login-attempts email [])))))
+
+(defn record-login-attempt! [email]
+  (swap! login-attempts update email
+         (fn [ts] (let [now    (System/currentTimeMillis)
+                        cutoff (- now window-ms)]
+                    (conj (filterv #(> % cutoff) (or ts [])) now)))))
+
+(defn login-rate-limited? [email]
+  (>= (count-recent-attempts email) max-attempts))
+
+;; ── Auth middleware ────────────────────────────────────────────────────────────
+
 (defn wrap-authentication [handler config]
   (fn [request]
     (let [auth-header (get-in request [:headers "authorization"])
           token       (when (and auth-header (.startsWith auth-header "Bearer "))
                         (subs auth-header 7))
           identity    (when token (jwt/token->identity token config))
-          ;; reject blacklisted tokens
-          identity    (when (and identity
-                                 (not (token-store/blacklisted?
-                                        (get-in identity [:claims :sub]))))
+          jti         (get-in identity [:claims :jti])
+          identity    (when (and identity (not (token-store/blacklisted? jti)))
                         identity)]
       (handler (assoc request :identity identity :raw-token token)))))
 
@@ -35,8 +54,8 @@
       (catch clojure.lang.ExceptionInfo e
         (let [{:keys [type] :as data} (ex-data e)]
           (case type
-            :forbidden  {:status 403 :body {:error "Forbidden"      :message (.getMessage e)}}
-            :not-found  {:status 404 :body {:error "Not Found"      :message (.getMessage e)}}
+            :forbidden  {:status 403 :body {:error "Forbidden"       :message (.getMessage e)}}
+            :not-found  {:status 404 :body {:error "Not Found"       :message (.getMessage e)}}
             :validation {:status 422 :body {:error "Validation Error" :details data}}
             {:status 500 :body {:error "Internal Server Error"}})))
       (catch Exception e
@@ -64,3 +83,8 @@
                  "X-XSS-Protection"          "1; mode=block"
                  "Strict-Transport-Security" "max-age=31536000; includeSubDomains"
                  "Content-Security-Policy"   "default-src 'self'"}))))
+
+(defn client-ip [request]
+  (or (get-in request [:headers "x-forwarded-for"])
+      (get-in request [:headers "x-real-ip"])
+      (some-> request :remote-addr)))

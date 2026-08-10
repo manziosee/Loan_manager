@@ -20,6 +20,10 @@
                   customer-id (update :where conj [:= :l.customer-id customer-id])))))
 
 (defn create-application! [ds application]
+  (db/execute-one! ds
+    (sql/format {:insert-into :loan-applications
+                 :values      [application]
+                 :returning   [:*]})))
 
 (defn find-application [ds tenant-id id]
   (jdbc/execute-one! ds
@@ -56,10 +60,36 @@
 
 (defn get-approval-steps [ds application-id]
   (jdbc/execute! ds
-    (sql/format {:select   [:*]
-                 :from     [:approval-steps]
-                 :where    [:= :application-id application-id]
-                 :order-by [[:step-order :asc]]})))
+    (sql/format {:select   [:as.* [:u.full-name :actor-name] [:u.email :actor-email]]
+                 :from     [[:approval-steps :as]]
+                 :left-join [[:users :u] [:= :as.assigned-to :u.id]]
+                 :where    [:= :as.application-id application-id]
+                 :order-by [[:as.step-order :asc]]})))
+
+(defn payment-history-stats
+  "Returns late payment counts and defaults for credit scoring."
+  [ds customer-id]
+  (let [now-sql  [:now]
+        m12-ago  [:- now-sql [:raw "INTERVAL '12 months'"]]
+        m24-ago  [:- now-sql [:raw "INTERVAL '24 months'"]]
+        stats    (jdbc/execute-one! ds
+                   (sql/format
+                    {:select [[[:count-filter {:where [:and
+                                                       [:>= :p.payment-date m12-ago]
+                                                       [:> :rs.due-date :p.payment-date]]}] :late-12m]
+                              [[:count-filter {:where [:and
+                                                       [:>= :p.payment-date m24-ago]
+                                                       [:> :rs.due-date :p.payment-date]]}] :late-24m]
+                              [[:count-filter {:where [:= :l.status "written_off"]}] :write-offs]
+                              [[:count-filter {:where [:in :l.status ["npl" "written_off"]]}] :defaults]]
+                     :from   [[:loans :l]]
+                     :left-join [[:payments :p]       [:and [:= :p.loan-id :l.id] [:= :p.reversed false]]
+                                 [:repayment-schedules :rs] [:= :rs.loan-id :l.id]]
+                     :where  [:= :l.customer-id customer-id]}))]
+    {:late-payments-12m (or (:late-12m stats) 0)
+     :late-payments-24m (or (:late-24m stats) 0)
+     :write-offs        (or (:write-offs stats) 0)
+     :defaults          (or (:defaults stats) 0)}))
 
 (defn create-loan! [ds loan]
   (db/execute-one! ds
