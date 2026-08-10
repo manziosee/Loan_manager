@@ -1,10 +1,11 @@
 (ns loanmanager.db.migrations
   (:require [ragtime.jdbc :as ragtime-jdbc]
+            [ragtime.next-jdbc :as ragtime-next]
             [ragtime.repl :as ragtime-repl]
             [clojure.tools.logging :as log]))
 
 (defn migration-config [ds]
-  {:datastore  (ragtime-jdbc/sql-database ds)
+  {:datastore  (ragtime-next/sql-database ds)
    :migrations (ragtime-jdbc/load-resources "migrations")})
 
 (defn migrate! [ds]

@@ -13,18 +13,9 @@
     </encoder>
   </appender>
 
-  <if condition='property("LOG_FORMAT").equals("json")'>
-    <then>
-      <root level="INFO">
-        <appender-ref ref="JSON"/>
-      </root>
-    </then>
-    <else>
-      <root level="INFO">
-        <appender-ref ref="CONSOLE"/>
-      </root>
-    </else>
-  </if>
+  <root level="INFO">
+    <appender-ref ref="CONSOLE"/>
+  </root>
 
   <logger name="loanmanager"          level="DEBUG"/>
   <logger name="com.zaxxer.hikari"    level="WARN"/>
