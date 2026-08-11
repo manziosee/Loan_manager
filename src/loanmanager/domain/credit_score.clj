@@ -80,7 +80,7 @@
                      (> dti 0.25)   0
                      :else          5))
     :finding-fn  (fn [{:keys [dti]} _]
-                   (let [pct (format "%.1f%%" (* dti 100))]
+                   (let [pct (format "%.1f%%" (double (* dti 100)))]
                      (if (> dti 0.35)
                        {:type :warning  :text (str "DTI ratio " pct " exceeds recommended threshold")}
                        {:type :strength :text (str "Healthy DTI ratio of " pct)})))}

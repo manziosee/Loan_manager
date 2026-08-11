@@ -7,7 +7,7 @@
 (defn- total-principal [schedule]
   (reduce + (map :principal-due schedule)))
 
-(defn- total-interest [schedule]
+(defn- ^:used total-interest [schedule]
   (reduce + (map :interest-due schedule)))
 
 ;; ── Reducing balance schedule ─────────────────────────────────────────────────

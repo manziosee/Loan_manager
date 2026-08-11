@@ -13,7 +13,7 @@
    [:applications-last-24h    {:optional true} [:int {:min 0}]]
    [:address-match-count      {:optional true} [:int {:min 0}]]
    [:days-since-last-update   {:optional true} [:int {:min 0}]]
-   [:bank-account-borrower-count {:optional true} [:int {:min 0}]}]])
+   [:bank-account-borrower-count {:optional true} [:int {:min 0}]]])
 
 (defn- build-signals-from-db
   "Auto-populate fraud signals from DB for a given customer."

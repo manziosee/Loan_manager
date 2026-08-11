@@ -8,7 +8,6 @@
             [reitit.swagger :as swagger]
             [reitit.swagger-ui :as swagger-ui]
             [muuntaja.core :as m]
-            [loanmanager.api.schemas :as schemas]
             [loanmanager.security.middleware :as sec]
             [loanmanager.api.routes.health :as health-routes]
             [loanmanager.api.routes.auth :as auth-routes]

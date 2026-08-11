@@ -17,7 +17,8 @@
                                                :where  [:and
                                                         [:= :tenant-id tenant-id]
                                                         [:= :active true]]
-                                               :order-by [[:name :asc]]}))})}\n
+                                               :order-by [[:name :asc]]}))})
+
      :post {:summary    "Create a new loan product"
             :tags       ["Loan Products"]
             :parameters {:body schemas/LoanProductCreate}

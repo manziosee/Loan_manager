@@ -159,7 +159,8 @@
            grace-period-months  0
            annual-rate          0}}]
   (let [n-periods           (periods-in-loan duration-months freq)
-        grace-periods       (periods-in-loan grace-period-months freq)
+        grace-periods       (if (zero? grace-period-months) 0
+                               (periods-in-loan grace-period-months freq))
         base                {:principal            principal
                              :annual-rate          annual-rate
                              :n-periods            n-periods
