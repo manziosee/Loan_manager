@@ -17,13 +17,12 @@
                                                :where  [:and
                                                         [:= :tenant-id tenant-id]
                                                         [:= :active true]]
-                                               :order-by [[:name :asc]]}))})}
-
+                                               :order-by [[:name :asc]]}))})}\n
      :post {:summary    "Create a new loan product"
             :tags       ["Loan Products"]
             :parameters {:body schemas/LoanProductCreate}
             :handler    (fn [{:keys [identity tenant-id body-params]}]
-                          (rbac/require-permission identity :admin)
+                          (rbac/require-permission identity :user/manage)
                           (let [product (jdbc/execute-one! ds
                                           (sql/format {:insert-into :loan-products
                                                        :values      [(assoc body-params
@@ -52,7 +51,7 @@
               :parameters {:path [:map [:id :string]]
                            :body schemas/LoanProductUpdate}
               :handler    (fn [{:keys [identity tenant-id path-params body-params]}]
-                            (rbac/require-permission identity :admin)
+                            (rbac/require-permission identity :user/manage)
                             (if-let [updated (jdbc/execute-one! ds
                                                (sql/format {:update    :loan-products
                                                             :set       (assoc body-params :updated-at [:now])
@@ -67,7 +66,7 @@
               :tags       ["Loan Products"]
               :parameters {:path [:map [:id :string]]}
               :handler    (fn [{:keys [identity tenant-id path-params]}]
-                            (rbac/require-permission identity :admin)
+                            (rbac/require-permission identity :user/manage)
                             (jdbc/execute-one! ds
                               (sql/format {:update :loan-products
                                            :set    {:active false :updated-at [:now]}

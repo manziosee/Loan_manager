@@ -69,26 +69,22 @@
 (defn payment-history-stats
   "Returns late payment counts and defaults for credit scoring."
   [ds customer-id]
-  (let [now-sql  [:now]
-        m12-ago  [:- now-sql [:raw "INTERVAL '12 months'"]]
-        m24-ago  [:- now-sql [:raw "INTERVAL '24 months'"]]
-        stats    (jdbc/execute-one! ds
-                   (sql/format
-                    {:select [[[:count-filter {:where [:and
-                                                       [:>= :p.payment-date m12-ago]
-                                                       [:> :rs.due-date :p.payment-date]]}] :late-12m]
-                              [[:count-filter {:where [:and
-                                                       [:>= :p.payment-date m24-ago]
-                                                       [:> :rs.due-date :p.payment-date]]}] :late-24m]
-                              [[:count-filter {:where [:= :l.status "written_off"]}] :write-offs]
-                              [[:count-filter {:where [:in :l.status ["npl" "written_off"]]}] :defaults]]
-                     :from   [[:loans :l]]
-                     :left-join [[:payments :p]       [:and [:= :p.loan-id :l.id] [:= :p.reversed false]]
-                                 [:repayment-schedules :rs] [:= :rs.loan-id :l.id]]
-                     :where  [:= :l.customer-id customer-id]}))]
-    {:late-payments-12m (or (:late-12m stats) 0)
-     :late-payments-24m (or (:late-24m stats) 0)
-     :write-offs        (or (:write-offs stats) 0)
+  (let [stats (jdbc/execute-one! ds
+                [(str "SELECT"
+                      "  COUNT(*) FILTER (WHERE p.payment_date > rs.due_date"
+                      "    AND p.payment_date >= NOW() - INTERVAL '12 months') AS late_12m,"
+                      "  COUNT(*) FILTER (WHERE p.payment_date > rs.due_date"
+                      "    AND p.payment_date >= NOW() - INTERVAL '24 months') AS late_24m,"
+                      "  COUNT(*) FILTER (WHERE l.status = 'written_off') AS write_offs,"
+                      "  COUNT(*) FILTER (WHERE l.status IN ('npl','written_off')) AS defaults"
+                      " FROM loans l"
+                      " LEFT JOIN payments p ON p.loan_id = l.id AND p.reversed = false"
+                      " LEFT JOIN repayment_schedules rs ON rs.loan_id = l.id"
+                      " WHERE l.customer_id = ?")
+                 customer-id])]
+    {:late-payments-12m (or (:late_12m stats) 0)
+     :late-payments-24m (or (:late_24m stats) 0)
+     :write-offs        (or (:write_offs stats) 0)
      :defaults          (or (:defaults stats) 0)}))
 
 (defn create-loan! [ds loan]

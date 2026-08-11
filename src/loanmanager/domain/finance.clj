@@ -62,18 +62,18 @@
 (defn build-reducing-balance-schedule
   [{:keys [principal annual-rate n-periods freq currency grace-period-periods]
     :or   {currency "USD" grace-period-periods 0 freq :monthly}}]
-  (let [r       (periodic-rate annual-rate freq)
-        payment (reducing-balance-payment principal annual-rate n-periods freq)]
+  (let [r            (periodic-rate annual-rate freq)
+        total-periods (+ n-periods grace-period-periods)
+        payment      (reducing-balance-payment principal annual-rate n-periods freq)]
     (loop [remaining principal
            n         1
            schedule  []]
-      (if (> n (+ n-periods grace-period-periods))
+      (if (> n total-periods)
         schedule
-        (let [grace?        (<= n grace-period-periods)
+        (let [grace?        (< n (inc grace-period-periods))
               interest-due  (* remaining r)
               principal-due (if grace? 0 (- payment interest-due))
-              ;; Last period: clear rounding residual
-              principal-due (if (= n (+ n-periods grace-period-periods))
+              principal-due (if (= n total-periods)
                               remaining
                               principal-due)]
           (recur (- remaining principal-due)
@@ -81,18 +81,18 @@
                  (conj schedule
                        (assoc (base-installment n principal-due interest-due currency)
                               :grace-period? grace?))))))))
-
 (defn build-flat-schedule
   [{:keys [principal annual-rate n-periods freq currency grace-period-periods]
     :or   {currency "USD" grace-period-periods 0 freq :monthly}}]
   (let [r              (periodic-rate annual-rate freq)
         principal-each (/ principal n-periods)
-        interest-each  (* principal r)]
+        interest-each  (* principal r)
+        total-periods  (+ n-periods grace-period-periods)]
     (loop [n        1
            schedule []]
-      (if (> n (+ n-periods grace-period-periods))
+      (if (> n total-periods)
         schedule
-        (let [grace? (<= n grace-period-periods)]
+        (let [grace? (< n (inc grace-period-periods))]
           (recur (inc n)
                  (conj schedule
                        (assoc (base-installment n

@@ -81,7 +81,7 @@
                      :else          5))
     :finding-fn  (fn [{:keys [dti]} _]
                    (let [pct (format "%.1f%%" (* dti 100))]
-                     (if (neg? (cond (> dti 0.35) -1 :else 1))
+                     (if (> dti 0.35)
                        {:type :warning  :text (str "DTI ratio " pct " exceeds recommended threshold")}
                        {:type :strength :text (str "Healthy DTI ratio of " pct)})))}
 
@@ -172,9 +172,9 @@
     {:total-score total :category category :base-score base-score :factors evaluated}))
 
 (defn explain [{:keys [total-score category factors]}]
-  (let [findings  (map :finding factors)
-        warnings  (filterv #(= :warning  (:type %)) findings)
-        strengths (filterv #(= :strength (:type %)) findings)
+  (let [findings   (map :finding factors)
+        warnings   (filterv #(= :warning  (:type %)) findings)
+        strengths  (filterv #(= :strength (:type %)) findings)
         risk-label (case category
                      :high-risk     "HIGH RISK"
                      :medium-risk   "MEDIUM RISK"

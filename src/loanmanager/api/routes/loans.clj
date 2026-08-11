@@ -216,7 +216,7 @@
                                             :disbursed-by          (:user-id identity)
                                             :status                "active"})]
                             (loans-db/insert-schedule! ds (:loans/id loan) schedule)
-                            (loans-db/update-application! ds tenant-id app-id {:status "approved"})
+                            (loans-db/update-application! ds tenant-id app-id {:status "disbursed"})
                             (audit/log! ds {:tenant-id   tenant-id
                                             :user-id     (:user-id identity)
                                             :action      "loan.disbursed"
@@ -294,8 +294,8 @@
                                                      :recorded-by       (:user-id identity)})]
                             (loans-db/update-loan! ds tenant-id loan-id
                               {:outstanding-principal (- (:loans/outstanding-principal loan) principal-portion)
-                               :total-paid-principal  (+ (:loans/total-paid-principal loan) principal-portion)
-                               :total-paid-interest   (+ (:loans/total-paid-interest loan) interest-portion)
+                               :total-paid-principal  (+ (or (:loans/total-paid-principal loan) 0M) principal-portion)
+                               :total-paid-interest   (+ (or (:loans/total-paid-interest loan) 0M) interest-portion)
                                :last-payment-date     [:now]})
                             (events/publish! bus {:event-type events/PAYMENT-RECEIVED
                                                   :tenant-id  tenant-id
@@ -378,22 +378,6 @@
                                             :entity-id   payment-id
                                             :after-state {:reason (:reason body-params)}})
                             {:status 200 :body payment}))}}]
-
-   ["/loans/simulate"
-    {:post {:summary    "Simulate loan repayment schedule (no auth required)"
-            :tags       ["Loans" "Tools"]
-            :parameters {:body schemas/SimulateRequest}
-            :handler    (fn [{:keys [body-params]}]
-                          (let [{:keys [principal annual-rate months]} body-params
-                                schedule (finance/build-schedule
-                                           {:method          :reducing-balance
-                                            :principal       principal
-                                            :annual-rate     (/ annual-rate 100)
-                                            :duration-months months})
-                                summary  (finance/schedule-summary schedule principal)]
-                            {:status 200
-                             :body   {:summary  summary
-                                      :schedule schedule}}))}}]
 
    ["/customers/:id/loans"
     {:get {:summary    "Get all loans for a customer"

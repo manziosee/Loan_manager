@@ -1,0 +1,20 @@
+{:lint-as {reitit.core/router clojure.core/identity}
+
+ :linters {:unresolved-symbol    {:level :warning}
+           :unused-namespace     {:level :warning}
+           :unused-binding       {:level :warning}
+           :redundant-do         {:level :warning}
+           :redundant-let        {:level :warning}
+           :missing-docstring    {:level :off}
+           :refer-all            {:level :warning}}
+
+ :config-in-ns
+ {loanmanager.api.routes.loans
+  {:linters {:unused-binding {:level :off}}}
+  loanmanager.api.routes.repayment
+  {:linters {:unused-binding {:level :off}}}
+  loanmanager.api.routes.collections
+  {:linters {:unused-binding {:level :off}}}}
+
+ :output {:progress false
+          :format   :text}}
