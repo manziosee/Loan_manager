@@ -15,11 +15,13 @@
                          (rbac/require-permission identity :loan/read)
                          (let [loan-id (parse-uuid (:id path-params))
                                loan    (loans-db/find-loan ds tenant-id loan-id)]
-                           {:status 200
-                            :body   (delinquency/assess
-                                      {:loan-id               loan-id
-                                       :outstanding-principal (:loans/outstanding-principal loan)
-                                       :days-overdue          (:loans/days-overdue loan)})}))}}]
+                           (if-not loan
+                             {:status 404 :body {:error "Loan not found"}}
+                             {:status 200
+                              :body   (delinquency/assess
+                                        {:loan-id               loan-id
+                                         :outstanding-principal (:loans/outstanding-principal loan)
+                                         :days-overdue          (or (:loans/days-overdue loan) 0)})})))}}]
 
    ["/loans/:id/delinquency/history"
     {:get {:summary    "Get delinquency classification history for a loan"

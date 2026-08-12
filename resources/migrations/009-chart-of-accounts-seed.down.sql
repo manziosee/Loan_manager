@@ -1,0 +1,3 @@
+DELETE FROM chart_of_accounts
+WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+  AND code IN ('1010', '1100', '4100', '4200')

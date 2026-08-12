@@ -1,7 +1,19 @@
 (ns loanmanager.db.loans
   (:require [next.jdbc :as jdbc]
             [honey.sql :as sql]
-            [loanmanager.db.connection :as db]))
+            [loanmanager.db.connection :as db]
+            [tick.core :as t]
+            [clojure.string :as str]))
+
+(defn- freq->days [freq]
+  (case freq
+    :daily     1
+    :weekly    7
+    :biweekly  14
+    :monthly   30
+    :quarterly 90
+    :bullet    30
+    30))
 
 (defn list-loans [ds tenant-id {:keys [status customer-id limit offset]
                                  :or   {limit 20 offset 0}}]
@@ -51,6 +63,18 @@
                           :limit    limit
                           :offset   offset}
                   status (update :where conj [:= :la.status (name status)])))))
+
+(defn applications-last-24h
+  "Count of applications this customer has submitted in the last 24 hours —
+   used as a fraud signal (rapid/duplicate applications)."
+  [ds customer-id]
+  (-> (jdbc/execute-one! ds
+        (sql/format {:select [[[:count :id] :cnt]]
+                     :from   [:loan-applications]
+                     :where  [:and [:= :customer-id customer-id]
+                                   [:>= :submitted-at [:- [:now] [:raw "INTERVAL '24 hours'"]]]]}))
+      :cnt
+      (or 0)))
 
 (defn add-approval-step! [ds step]
   (db/execute-one! ds
@@ -113,10 +137,24 @@
                  :where    [:and [:= :tenant-id tenant-id] [:= :customer-id customer-id]]
                  :order-by [[:created-at :desc]]})))
 
-(defn insert-schedule! [ds loan-id installments]
-  (db/execute! ds
-    (sql/format {:insert-into :repayment-schedules
-                 :values      (mapv #(assoc % :loan-id loan-id) installments)})))
+(defn insert-schedule!
+  "Persists a generated schedule (loanmanager.domain.finance/build-schedule).
+   Its installment maps carry :currency (not a column — currency lives on the
+   loan) and no :due-date (required, no schema default), so both need
+   resolving here: due-date = today + (installment-no * period length)."
+  [ds loan-id freq installments]
+  (let [start (t/date)
+        days  (freq->days freq)
+        rows  (mapv (fn [{:keys [installment-no status] :as inst}]
+                      (-> inst
+                          (dissoc :currency :grace-period? :balloon?)
+                          (assoc :loan-id  loan-id
+                                 :status   (name status)
+                                 :due-date (t/>> start (t/new-period (* installment-no days) :days)))))
+                    installments)]
+    (db/execute! ds
+      (sql/format {:insert-into :repayment-schedules
+                   :values      rows}))))
 
 (defn get-schedule [ds loan-id]
   (jdbc/execute! ds
@@ -169,7 +207,9 @@
   (db/execute-one! ds
     (sql/format {:update    :loans
                  :set       {:days-overdue       days-overdue
-                             :delinquency-bucket (name bucket)
+                             ;; delinquency_bucket enum uses underscores (1_30, 90_plus);
+                             ;; domain/delinquency.clj's bucket keywords use hyphens (:1-30, :90-plus)
+                             :delinquency-bucket (str/replace (name bucket) "-" "_")
                              :status             (case bucket
                                                    :npl     "npl"
                                                    :current "active"
@@ -200,7 +240,8 @@
 
 (defn reverse-payment! [ds tenant-id payment-id reason reversed-by]
   (jdbc/with-transaction [tx ds]
-    (let [payment (find-payment tx tenant-id payment-id)
+    (let [tx      (db/with-kebab-keys tx)
+          payment (find-payment tx tenant-id payment-id)
           _       (when (or (nil? payment) (:payments/reversed payment))
                     (throw (ex-info "Payment not found or already reversed"
                                    {:type :validation})))
@@ -227,7 +268,7 @@
 (defn write-off-loan! [ds tenant-id loan-id written-off-by reason]
   (db/execute-one! ds
     (sql/format {:update    :loans
-                 :set       {:status          "written-off"
+                 :set       {:status          "written_off"
                              :written-off-at  [:now]
                              :written-off-by  written-off-by
                              :write-off-reason reason

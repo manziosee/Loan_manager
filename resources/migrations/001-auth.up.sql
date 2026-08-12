@@ -1,7 +1,7 @@
--- :up
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp"
+-- ;;
+CREATE EXTENSION IF NOT EXISTS "pgcrypto"
+-- ;;
 -- Multi-tenant root
 CREATE TABLE tenants (
   id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -10,8 +10,8 @@ CREATE TABLE tenants (
   config      JSONB NOT NULL DEFAULT '{}',
   active      BOOLEAN NOT NULL DEFAULT TRUE,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
+)
+-- ;;
 -- RBAC roles
 CREATE TABLE roles (
   id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -19,8 +19,8 @@ CREATE TABLE roles (
   name        VARCHAR(100) NOT NULL,
   permissions JSONB NOT NULL DEFAULT '[]',
   UNIQUE(tenant_id, name)
-);
-
+)
+-- ;;
 -- Users
 CREATE TABLE users (
   id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -35,8 +35,8 @@ CREATE TABLE users (
   last_login_at TIMESTAMPTZ,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(tenant_id, email)
-);
-
+)
+-- ;;
 -- Refresh tokens
 CREATE TABLE refresh_tokens (
   id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -44,10 +44,4 @@ CREATE TABLE refresh_tokens (
   token_hash VARCHAR(255) NOT NULL UNIQUE,
   expires_at TIMESTAMPTZ NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- :down
-DROP TABLE IF EXISTS refresh_tokens;
-DROP TABLE IF EXISTS users;
-DROP TABLE IF EXISTS roles;
-DROP TABLE IF EXISTS tenants;
+)

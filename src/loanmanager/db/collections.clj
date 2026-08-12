@@ -115,7 +115,9 @@
 (defn log-delinquency! [ds entry]
   (db/execute-one! ds
     (sql/format {:insert-into :delinquency-log
-                 :values      [entry]
+                 :values      [(cond-> entry
+                                 (:triggered-actions entry)
+                                 (update :triggered-actions #(vector :lift %)))]
                  :returning   [:id]})))
 
 (defn loan-delinquency-history [ds loan-id]

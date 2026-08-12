@@ -1,17 +1,16 @@
--- :up
 CREATE TYPE application_status AS ENUM (
   'draft','submitted','kyc_check','credit_assessment',
   'risk_scoring','pending_approval','approved','rejected','cancelled'
-);
-
+)
+-- ;;
 CREATE TYPE loan_status AS ENUM (
   'active','overdue','npl','restructured','closed','written_off'
-);
-
+)
+-- ;;
 CREATE TYPE delinquency_bucket AS ENUM (
   'current','1_30','31_60','61_90','90_plus','npl'
-);
-
+)
+-- ;;
 -- Loan applications
 CREATE TABLE loan_applications (
   id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -48,8 +47,8 @@ CREATE TABLE loan_applications (
   created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(tenant_id, application_no)
-);
-
+)
+-- ;;
 -- Approval workflow steps
 CREATE TABLE approval_steps (
   id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -61,8 +60,8 @@ CREATE TABLE approval_steps (
   comments        TEXT,
   acted_at        TIMESTAMPTZ,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
+)
+-- ;;
 -- Active loans
 CREATE TABLE loans (
   id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -102,8 +101,8 @@ CREATE TABLE loans (
   created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(tenant_id, loan_no)
-);
-
+)
+-- ;;
 -- Amortization schedule
 CREATE TABLE repayment_schedules (
   id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -118,8 +117,8 @@ CREATE TABLE repayment_schedules (
   status            VARCHAR(20) NOT NULL DEFAULT 'pending',  -- pending|partial|paid|overdue
   paid_at           TIMESTAMPTZ,
   UNIQUE(loan_id, installment_no)
-);
-
+)
+-- ;;
 -- Payments
 CREATE TABLE payments (
   id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -139,14 +138,4 @@ CREATE TABLE payments (
   reversed_by     UUID REFERENCES users(id),
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(tenant_id, payment_no)
-);
-
--- :down
-DROP TABLE IF EXISTS payments;
-DROP TABLE IF EXISTS repayment_schedules;
-DROP TABLE IF EXISTS loans;
-DROP TABLE IF EXISTS approval_steps;
-DROP TABLE IF EXISTS loan_applications;
-DROP TYPE  IF EXISTS delinquency_bucket;
-DROP TYPE  IF EXISTS loan_status;
-DROP TYPE  IF EXISTS application_status;
+)

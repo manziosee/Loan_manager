@@ -5,10 +5,13 @@
             [loanmanager.db.loans :as loans-db]
             [loanmanager.db.customers :as customers-db]
             [loanmanager.db.audit :as audit]
+            [loanmanager.db.connection :as db]
             [loanmanager.domain.finance :as finance]
             [loanmanager.domain.credit-score :as credit-score]
             [loanmanager.domain.fraud :as fraud]
             [loanmanager.workflow.engine :as workflow]
+            [loanmanager.domain.accounting :as accounting]
+            [loanmanager.db.ledger :as ledger]
             [loanmanager.events.bus :as events]
             [loanmanager.security.rbac :as rbac]))
 
@@ -44,6 +47,7 @@
                                 customer     (customers-db/find-by-id ds tenant-id (parse-uuid customer-id))
                                 product      (get-product ds tenant-id (parse-uuid product-id))
                                 obligs       (customers-db/total-monthly-obligations ds (parse-uuid customer-id))
+                                history      (loans-db/payment-history-stats ds (parse-uuid customer-id))
                                 rate         (/ (:loan-products/interest-rate-min product) 100)
                                 new-payment  (finance/reducing-balance-payment
                                                requested-amount rate requested-duration :monthly)
@@ -51,10 +55,10 @@
                                                {:monthly-income           (or (:customers/monthly-income customer) 0)
                                                 :employment-years         (or (:customers/employment-years customer) 0)
                                                 :employment-type          (or (:customers/employment-type customer) "permanent")
-                                                :late-payments-12m        0
-                                                :late-payments-24m        0
-                                                :defaults                 0
-                                                :write-offs               0
+                                                :late-payments-12m        (:late-payments-12m history)
+                                                :late-payments-24m        (:late-payments-24m history)
+                                                :defaults                 (:defaults history)
+                                                :write-offs               (:write-offs history)
                                                 :dti                      (finance/debt-to-income
                                                                             (or (:customers/monthly-income customer) 0)
                                                                             obligs new-payment)
@@ -65,9 +69,12 @@
                                                 :months-banking           12
                                                 :requested-amount         requested-amount})
                                 fraud-result (fraud/evaluate
-                                               {:phone-customer-count        1
-                                                :id-doc-duplicate?           false
-                                                :applications-last-24h       1
+                                               {:phone-customer-count  (customers-db/phone-customer-count
+                                                                         ds tenant-id (:customers/phone customer))
+                                                :id-doc-duplicate?     (customers-db/id-doc-duplicate?
+                                                                         ds (parse-uuid customer-id))
+                                                :applications-last-24h (loans-db/applications-last-24h
+                                                                         ds (parse-uuid customer-id))
                                                 :address-match-count         0
                                                 :bank-account-borrower-count 1})
                                 wf           (workflow/determine-workflow
@@ -84,13 +91,13 @@
                                                 :purpose            purpose
                                                 :credit-score       (:total-score score-result)
                                                 :risk-category      (name (:category score-result))
-                                                :score-breakdown    (:factors score-result)
+                                                :score-breakdown    [:lift (:factors score-result)]
                                                 :fraud-score        (:fraud-score fraud-result)
-                                                :fraud-flags        (:flags fraud-result)
+                                                :fraud-flags        [:lift (:flags fraud-result)]
                                                 :status             (if (= :auto-approve (:type wf))
                                                                       "approved" "submitted")
                                                 :current-step       (-> wf :steps first :step)
-                                                :workflow-state     {:steps (:steps wf) :completed []}
+                                                :workflow-state     [:lift {:steps (:steps wf) :completed []}]
                                                 :submitted-by       (:user-id identity)
                                                 :submitted-at       [:now]})]
                             (events/publish! bus {:event-type     events/LOAN-APPLICATION-SUBMITTED
@@ -169,10 +176,14 @@
                                :acted-at       [:now]})
                             (let [updated (loans-db/update-application! ds tenant-id id
                                             {:status new-status :decided-at [:now]})]
-                              (when (= action "approved")
-                                (events/publish! bus {:event-type     events/LOAN-APPROVED
-                                                      :tenant-id      tenant-id
-                                                      :application-id id}))
+                              (case action
+                                "approved" (events/publish! bus {:event-type     events/LOAN-APPROVED
+                                                                 :tenant-id      tenant-id
+                                                                 :application-id id})
+                                "rejected" (events/publish! bus {:event-type     events/LOAN-REJECTED
+                                                                 :tenant-id      tenant-id
+                                                                 :application-id id})
+                                nil)
                               {:status 200 :body updated})))}}]
 
    ["/loan-applications/:id/disburse"
@@ -181,11 +192,13 @@
             :parameters {:path [:map [:id :string]]}
             :handler    (fn [{:keys [identity tenant-id path-params]}]
                           (rbac/require-permission identity :loan/disburse)
-                          (let [app-id   (parse-uuid (:id path-params))
-                                app      (loans-db/find-application ds tenant-id app-id)
-                                product  (get-product ds tenant-id (:loan-applications/product-id app))
-                                amount   (:loan-applications/approved-amount app
-                                           (:loan-applications/requested-amount app))
+                          (let [app-id (parse-uuid (:id path-params))
+                                app    (loans-db/find-application ds tenant-id app-id)]
+                          (if-not app
+                            {:status 404 :body {:error "Application not found"}}
+                          (let [product  (get-product ds tenant-id (:loan-applications/product-id app))
+                                amount   (or (:loan-applications/approved-amount app)
+                                             (:loan-applications/requested-amount app))
                                 rate     (/ (or (:loan-applications/approved-rate app)
                                                 (:loan-products/interest-rate-min product))
                                             100)
@@ -199,24 +212,40 @@
                                             :duration-months months
                                             :freq            freq
                                             :currency        (:loan-products/currency product)})
-                                loan     (loans-db/create-loan! ds
-                                           {:tenant-id             tenant-id
-                                            :loan-no               (loan-no)
-                                            :application-id        app-id
-                                            :customer-id           (:loan-applications/customer-id app)
-                                            :product-id            (:loan-applications/product-id app)
-                                            :principal             amount
-                                            :interest-rate         (* rate 100)
-                                            :interest-method       (name (:loan-products/interest-method product))
-                                            :duration-months       months
-                                            :repayment-freq        (name freq)
-                                            :currency              (:loan-products/currency product)
-                                            :outstanding-principal amount
-                                            :disbursed-at          [:now]
-                                            :disbursed-by          (:user-id identity)
-                                            :status                "active"})]
-                            (loans-db/insert-schedule! ds (:loans/id loan) schedule)
-                            (loans-db/update-application! ds tenant-id app-id {:status "disbursed"})
+                                currency (:loan-products/currency product)
+                                loan     (jdbc/with-transaction [tx ds]
+                                           ;; with-transaction's tx does NOT inherit ds's
+                                           ;; with-kebab-keys wrapping — re-wrap or every
+                                           ;; hyphenated key access below silently returns nil.
+                                           (let [tx (db/with-kebab-keys tx)
+                                                 loan (loans-db/create-loan! tx
+                                                        {:tenant-id             tenant-id
+                                                         :loan-no               (loan-no)
+                                                         :application-id        app-id
+                                                         :customer-id           (:loan-applications/customer-id app)
+                                                         :product-id            (:loan-applications/product-id app)
+                                                         :principal             amount
+                                                         :interest-rate         (* rate 100)
+                                                         :interest-method       (name (:loan-products/interest-method product))
+                                                         :duration-months       months
+                                                         :repayment-freq        (name freq)
+                                                         :currency              currency
+                                                         :outstanding-principal amount
+                                                         :disbursed-at          [:now]
+                                                         :disbursed-by          (:user-id identity)
+                                                         :status                "active"})
+                                                 ledger-entry (accounting/disbursement-entry
+                                                                {:loan-id      (:loans/loan-no loan)
+                                                                 :reference-id (:loans/id loan)
+                                                                 :amount       (double amount)
+                                                                 :currency     currency})]
+                                             (accounting/validate-entry ledger-entry)
+                                             (loans-db/insert-schedule! tx (:loans/id loan) freq schedule)
+                                             (loans-db/update-application! tx tenant-id app-id {:status "disbursed"})
+                                             (ledger/post-entry! tx
+                                               {:tenant-id tenant-id :posted-by (:user-id identity)}
+                                               ledger-entry)
+                                             loan))]
                             (audit/log! ds {:tenant-id   tenant-id
                                             :user-id     (:user-id identity)
                                             :action      "loan.disbursed"
@@ -226,7 +255,7 @@
                                                   :tenant-id  tenant-id
                                                   :loan-id    (:loans/id loan)
                                                   :amount     amount})
-                            {:status 201 :body loan}))}}]
+                            {:status 201 :body loan}))))}}]
 
    ["/loans"
     {:get {:summary    "List all loans"
@@ -275,34 +304,50 @@
                          :body schemas/PaymentCreate}
             :handler    (fn [{:keys [identity tenant-id path-params body-params]}]
                           (rbac/require-permission identity :payment/create)
-                          (let [loan-id           (parse-uuid (:id path-params))
-                                loan              (loans-db/find-loan ds tenant-id loan-id)
-                                {:keys [amount payment-method reference]} body-params
+                          (let [loan-id (parse-uuid (:id path-params))
+                                loan    (loans-db/find-loan ds tenant-id loan-id)]
+                          (if-not loan
+                            {:status 404 :body {:error "Loan not found"}}
+                          (let [{:keys [amount payment-method reference]} body-params
                                 rate              (/ (:loans/interest-rate loan) 100)
                                 interest-due      (* (:loans/outstanding-principal loan) (/ rate 12))
                                 interest-portion  (min amount interest-due)
                                 principal-portion (- amount interest-portion)
-                                payment           (loans-db/record-payment! ds
-                                                    {:tenant-id         tenant-id
-                                                     :loan-id           loan-id
-                                                     :payment-no        (pay-no)
-                                                     :amount            amount
-                                                     :principal-portion principal-portion
-                                                     :interest-portion  interest-portion
-                                                     :payment-method    payment-method
-                                                     :reference         reference
-                                                     :recorded-by       (:user-id identity)})]
-                            (loans-db/update-loan! ds tenant-id loan-id
-                              {:outstanding-principal (- (:loans/outstanding-principal loan) principal-portion)
-                               :total-paid-principal  (+ (or (:loans/total-paid-principal loan) 0M) principal-portion)
-                               :total-paid-interest   (+ (or (:loans/total-paid-interest loan) 0M) interest-portion)
-                               :last-payment-date     [:now]})
+                                currency          (:loans/currency loan)
+                                payment           (jdbc/with-transaction [tx ds]
+                                                    (let [tx (db/with-kebab-keys tx)
+                                                          payment (loans-db/record-payment! tx
+                                                                    {:tenant-id         tenant-id
+                                                                     :loan-id           loan-id
+                                                                     :payment-no        (pay-no)
+                                                                     :amount            amount
+                                                                     :principal-portion principal-portion
+                                                                     :interest-portion  interest-portion
+                                                                     :payment-method    payment-method
+                                                                     :reference         reference
+                                                                     :recorded-by       (:user-id identity)})
+                                                          ledger-entry (accounting/payment-entry
+                                                                         {:payment-id        (:payments/payment-no payment)
+                                                                          :reference-id      (:payments/id payment)
+                                                                          :principal-portion (double principal-portion)
+                                                                          :interest-portion  (double interest-portion)
+                                                                          :currency          currency})]
+                                                      (accounting/validate-entry ledger-entry)
+                                                      (loans-db/update-loan! tx tenant-id loan-id
+                                                        {:outstanding-principal (- (:loans/outstanding-principal loan) principal-portion)
+                                                         :total-paid-principal  (+ (or (:loans/total-paid-principal loan) 0M) principal-portion)
+                                                         :total-paid-interest   (+ (or (:loans/total-paid-interest loan) 0M) interest-portion)
+                                                         :last-payment-date     [:now]})
+                                                      (ledger/post-entry! tx
+                                                        {:tenant-id tenant-id :posted-by (:user-id identity)}
+                                                        ledger-entry)
+                                                      payment))]
                             (events/publish! bus {:event-type events/PAYMENT-RECEIVED
                                                   :tenant-id  tenant-id
                                                   :loan-id    loan-id
                                                   :amount     amount
                                                   :payment-id (:payments/id payment)})
-                            {:status 201 :body payment}))}}]
+                            {:status 201 :body payment}))))}}]
 
    ["/loans/:id/restructure"
     {:post {:summary    "Restructure a loan (rate/term change)"

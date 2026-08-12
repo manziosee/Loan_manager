@@ -144,9 +144,9 @@
                        (> ratio 0.15)  3
                        :else           0)))
     :finding-fn  (fn [{:keys [monthly-income requested-amount]} score-delta]
-                   (let [ratio (if (pos? (or requested-amount 1))
-                                 (* 100 (/ (or monthly-income 0) requested-amount))
-                                 0)]
+                   (let [ratio (double (if (pos? (or requested-amount 1))
+                                         (* 100 (/ (or monthly-income 0) requested-amount))
+                                         0))]
                      (if (>= score-delta 5)
                        {:type :strength :text (str "Income-to-loan ratio of " (format "%.1f%%" ratio) " is adequate")}
                        {:type :warning  :text "Loan amount is high relative to monthly income"})))}])

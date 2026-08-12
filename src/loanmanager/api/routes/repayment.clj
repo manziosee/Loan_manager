@@ -40,21 +40,23 @@
            :handler    (fn [{:keys [identity tenant-id path-params query-params]}]
                          (rbac/require-permission identity :loan/read)
                          (let [loan-id (parse-uuid (:id path-params))
-                               loan    (loans-db/find-loan ds tenant-id loan-id)
-                               schedule (loans-db/get-schedule ds loan-id)
-                               total-interest-original (reduce + (map :repayment-schedules/interest-due schedule))
-                               total-interest-paid     (:loans/total-paid-interest loan)
-                               days    (or (:days-since-last-payment query-params) 0)
-                               quote   (finance/early-repayment-settlement
-                                         {:outstanding-principal    (:loans/outstanding-principal loan)
-                                          :annual-rate              (/ (:loans/interest-rate loan) 100)
-                                          :days-since-last-payment  days
-                                          :original-total-interest  total-interest-original
-                                          :total-interest-paid      total-interest-paid})]
-                           {:status 200
-                            :body   (assoc quote
-                                           :loan-no  (:loans/loan-no loan)
-                                           :currency (:loans/currency loan))}))}}]
+                               loan    (loans-db/find-loan ds tenant-id loan-id)]
+                           (if-not loan
+                             {:status 404 :body {:error "Loan not found"}}
+                             (let [schedule (loans-db/get-schedule ds loan-id)
+                                   total-interest-original (reduce + (map :repayment-schedules/interest-due schedule))
+                                   total-interest-paid     (:loans/total-paid-interest loan)
+                                   days    (or (:days-since-last-payment query-params) 0)
+                                   quote   (finance/early-repayment-settlement
+                                             {:outstanding-principal    (:loans/outstanding-principal loan)
+                                              :annual-rate              (/ (:loans/interest-rate loan) 100)
+                                              :days-since-last-payment  days
+                                              :original-total-interest  total-interest-original
+                                              :total-interest-paid      total-interest-paid})]
+                               {:status 200
+                                :body   (assoc quote
+                                               :loan-no  (:loans/loan-no loan)
+                                               :currency (:loans/currency loan))}))))}}]
 
    ;; ── Partial prepayment ────────────────────────────────────────────────────
    ["/loans/:id/prepayment"
@@ -64,9 +66,11 @@
                          :body schemas/PrepaymentRequest}
             :handler    (fn [{:keys [identity tenant-id path-params body-params]}]
                           (rbac/require-permission identity :payment/create)
-                          (let [loan-id           (parse-uuid (:id path-params))
-                                loan              (loans-db/find-loan ds tenant-id loan-id)
-                                {:keys [prepayment-amount payment-method reference]} body-params
+                          (let [loan-id (parse-uuid (:id path-params))
+                                loan    (loans-db/find-loan ds tenant-id loan-id)]
+                          (if-not loan
+                            {:status 404 :body {:error "Loan not found"}}
+                          (let [{:keys [prepayment-amount payment-method reference]} body-params
                                 new-outstanding   (- (:loans/outstanding-principal loan)
                                                      prepayment-amount)
                                 _                 (when (neg? new-outstanding)
@@ -122,7 +126,7 @@
                                       :new-outstanding  new-outstanding
                                       :new-schedule     (:new-schedule new-schedule)
                                       :new-monthly-payment (:new-monthly-payment new-schedule)
-                                      :remaining-periods   (:remaining-periods new-schedule)}}))}}]
+                                      :remaining-periods   (:remaining-periods new-schedule)}}))))}}]
 
    ;; ── Full early settlement ─────────────────────────────────────────────────
    ["/loans/:id/settle"
@@ -132,9 +136,11 @@
                          :body schemas/PaymentCreate}
             :handler    (fn [{:keys [identity tenant-id path-params body-params]}]
                           (rbac/require-permission identity :payment/create)
-                          (let [loan-id  (parse-uuid (:id path-params))
-                                loan     (loans-db/find-loan ds tenant-id loan-id)
-                                schedule (loans-db/get-schedule ds loan-id)
+                          (let [loan-id (parse-uuid (:id path-params))
+                                loan    (loans-db/find-loan ds tenant-id loan-id)]
+                          (if-not loan
+                            {:status 404 :body {:error "Loan not found"}}
+                          (let [schedule (loans-db/get-schedule ds loan-id)
                                 total-interest-original (reduce + (map :repayment-schedules/interest-due schedule))
                                 quote    (finance/early-repayment-settlement
                                            {:outstanding-principal   (:loans/outstanding-principal loan)
@@ -169,4 +175,4 @@
                             {:status 200
                              :body   {:payment          payment
                                       :settlement-quote quote
-                                      :loan-status      "closed"}}))}}]])
+                                      :loan-status      "closed"}}))))}}]])

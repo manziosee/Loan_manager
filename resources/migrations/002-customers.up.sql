@@ -1,4 +1,3 @@
--- :up
 CREATE TABLE branches (
   id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   tenant_id   UUID NOT NULL REFERENCES tenants(id),
@@ -9,15 +8,17 @@ CREATE TABLE branches (
   active      BOOLEAN NOT NULL DEFAULT TRUE,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(tenant_id, code)
-);
-
+)
+-- ;;
 ALTER TABLE users ADD CONSTRAINT fk_user_branch
-  FOREIGN KEY (branch_id) REFERENCES branches(id);
-
-CREATE TYPE customer_type AS ENUM ('individual','business','joint');
-CREATE TYPE id_doc_type   AS ENUM ('national_id','passport','driving_license','company_reg');
-CREATE TYPE kyc_status    AS ENUM ('pending','verified','rejected','expired');
-
+  FOREIGN KEY (branch_id) REFERENCES branches(id)
+-- ;;
+CREATE TYPE customer_type AS ENUM ('individual','business','joint')
+-- ;;
+CREATE TYPE id_doc_type   AS ENUM ('national_id','passport','driving_license','company_reg')
+-- ;;
+CREATE TYPE kyc_status    AS ENUM ('pending','verified','rejected','expired')
+-- ;;
 CREATE TABLE customers (
   id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   tenant_id       UUID NOT NULL REFERENCES tenants(id),
@@ -53,8 +54,8 @@ CREATE TABLE customers (
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(tenant_id, customer_no)
-);
-
+)
+-- ;;
 CREATE TABLE customer_documents (
   id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   customer_id   UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
@@ -68,8 +69,8 @@ CREATE TABLE customer_documents (
   verified_by   UUID REFERENCES users(id),
   verified_at   TIMESTAMPTZ,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
+)
+-- ;;
 CREATE TABLE customer_liabilities (
   id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   customer_id     UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
@@ -78,13 +79,4 @@ CREATE TABLE customer_liabilities (
   outstanding     NUMERIC(18,2) NOT NULL,
   monthly_payment NUMERIC(18,2) NOT NULL,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- :down
-DROP TABLE IF EXISTS customer_liabilities;
-DROP TABLE IF EXISTS customer_documents;
-DROP TABLE IF EXISTS customers;
-DROP TYPE  IF EXISTS kyc_status;
-DROP TYPE  IF EXISTS id_doc_type;
-DROP TYPE  IF EXISTS customer_type;
-DROP TABLE IF EXISTS branches;
+)

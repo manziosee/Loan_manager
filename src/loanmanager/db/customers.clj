@@ -99,3 +99,32 @@
                      :where  [:= :customer-id customer-id]}))
       :total
       (or 0M)))
+
+;; ── Fraud signals ─────────────────────────────────────────────────────────────
+
+(defn phone-customer-count
+  "How many customers (within the tenant) share this phone number.
+   1 = unique to this customer, >1 = shared/suspicious."
+  [ds tenant-id phone]
+  (if (nil? phone)
+    1
+    (-> (jdbc/execute-one! ds
+          (sql/format {:select [[[:count :id] :cnt]]
+                       :from   [:customers]
+                       :where  [:and [:= :tenant-id tenant-id] [:= :phone phone]]}))
+        :cnt
+        (or 1))))
+
+(defn id-doc-duplicate?
+  "True if any of this customer's ID document numbers are also on file for a
+   different customer — a strong fraud signal."
+  [ds customer-id]
+  (-> (jdbc/execute-one! ds
+        (sql/format {:select [[[:count [:distinct :cd2.customer-id]] :cnt]]
+                     :from   [[:customer-documents :cd1]]
+                     :join   [[:customer-documents :cd2] [:= :cd1.doc-number :cd2.doc-number]]
+                     :where  [:and [:= :cd1.customer-id customer-id]
+                                   [:not= :cd2.customer-id customer-id]]}))
+      :cnt
+      (or 0)
+      pos?))

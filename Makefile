@@ -79,7 +79,7 @@ migrate: ## Run pending migrations
 	clojure -M:migrate
 
 rollback: ## Rollback last migration
-	clojure -M -e "(require '[loanmanager.db.migrations :as m] '[loanmanager.db.connection :as db] '[aero.core :as aero] '[clojure.java.io :as io]) (let [cfg (aero/read-config (io/resource \"config.edn\")) ds (db/init-pool! (:database cfg))] (m/rollback! ds) (db/close-pool! ds))"
+	clojure -M:migrate rollback
 
 psql: ## Open psql shell against local DB
 	docker-compose exec db psql -U postgres -d loanmanager

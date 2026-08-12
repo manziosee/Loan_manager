@@ -28,24 +28,26 @@
            :parameters {:path [:map [:id :string]]}
            :handler    (fn [{:keys [identity tenant-id path-params]}]
                          (rbac/require-permission identity :collection/read)
-                         (let [case-id    (parse-uuid (:id path-params))
-                               case-data  (coll-db/find-case ds tenant-id case-id)
-                               activities (coll-db/case-activities ds case-id)
-                               promises   (coll-db/case-promises ds case-id)
-                               loan       (loans-db/find-loan ds tenant-id
-                                                              (:collection-cases/loan-id case-data))
-                               customer   (customers-db/find-by-id ds tenant-id
-                                                                    (:loans/customer-id loan))
-                               summary    (collections/case-summary
-                                            {:customer   customer
-                                             :loan       loan
-                                             :activities activities
-                                             :promises   promises})]
-                           {:status 200
-                            :body   {:case       case-data
-                                     :activities activities
-                                     :promises   promises
-                                     :summary    summary}}))}}]
+                         (let [case-id   (parse-uuid (:id path-params))
+                               case-data (coll-db/find-case ds tenant-id case-id)]
+                           (if-not case-data
+                             {:status 404 :body {:error "Collection case not found"}}
+                             (let [activities (coll-db/case-activities ds case-id)
+                                   promises   (coll-db/case-promises ds case-id)
+                                   loan       (loans-db/find-loan ds tenant-id
+                                                                  (:collection-cases/loan-id case-data))
+                                   customer   (customers-db/find-by-id ds tenant-id
+                                                                        (:loans/customer-id loan))
+                                   summary    (collections/case-summary
+                                                {:customer   customer
+                                                 :loan       loan
+                                                 :activities activities
+                                                 :promises   promises})]
+                               {:status 200
+                                :body   {:case       case-data
+                                         :activities activities
+                                         :promises   promises
+                                         :summary    summary}}))))}}]
 
    ["/collections/:id/activities"
     {:post {:summary    "Record a collection activity (call, SMS, visit, etc.)"
@@ -85,21 +87,23 @@
             :handler    (fn [{:keys [identity tenant-id path-params body-params]}]
                           (rbac/require-permission identity :collection/create)
                           (let [case-id  (parse-uuid (:id path-params))
-                                case-row (coll-db/find-case ds tenant-id case-id)
-                                promise  (coll-db/create-promise! ds
-                                           {:case-id        case-id
-                                            :loan-id        (:collection-cases/loan-id case-row)
-                                            :promise-date   (:promise-date body-params)
-                                            :promise-amount (:promise-amount body-params)
-                                            :status         "pending"
-                                            :recorded-by    (:user-id identity)})]
-                            (coll-db/add-activity! ds
-                              {:case-id       case-id
-                               :activity-type "promise_to_pay"
-                               :notes         (str "Promise: $" (:promise-amount body-params)
-                                                   " by " (:promise-date body-params))
-                               :recorded-by   (:user-id identity)})
-                            {:status 201 :body promise}))}}]
+                                case-row (coll-db/find-case ds tenant-id case-id)]
+                            (if-not case-row
+                              {:status 404 :body {:error "Collection case not found"}}
+                              (let [promise (coll-db/create-promise! ds
+                                              {:case-id        case-id
+                                               :loan-id        (:collection-cases/loan-id case-row)
+                                               :promise-date   (:promise-date body-params)
+                                               :promise-amount (:promise-amount body-params)
+                                               :status         "pending"
+                                               :recorded-by    (:user-id identity)})]
+                                (coll-db/add-activity! ds
+                                  {:case-id       case-id
+                                   :activity-type "promise_to_pay"
+                                   :notes         (str "Promise: $" (:promise-amount body-params)
+                                                       " by " (:promise-date body-params))
+                                   :recorded-by   (:user-id identity)})
+                                {:status 201 :body promise}))))}}]
 
    ["/collections/promises/:id"
     {:put {:summary    "Update promise-to-pay status (kept/broken/partial)"

@@ -17,26 +17,31 @@
 (def PROCESSING-FEES  "4200")
 
 (defn disbursement-entry
-  "Debit: Loans Receivable | Credit: Cash"
-  [{:keys [loan-id amount currency]}]
+  "Debit: Loans Receivable | Credit: Cash.
+   loan-id is used for the human-readable description; reference-id (the
+   loan's actual UUID — journal_entries.reference_id is a uuid column) is
+   what gets stored for lookups, and falls back to loan-id when omitted so
+   pure/test callers that only care about the entry shape still work."
+  [{:keys [loan-id amount currency reference-id]}]
   (entry (str "Loan disbursement " loan-id)
-         :disbursement loan-id
+         :disbursement (or reference-id loan-id)
          [(debit  LOANS-RECEIVABLE amount currency)
           (credit CASH-AT-BANK     amount currency)]))
 
 (defn payment-entry
-  "Debit: Cash | Credit: Loans Receivable (principal) + Interest Income"
-  [{:keys [payment-id principal-portion interest-portion currency]}]
+  "Debit: Cash | Credit: Loans Receivable (principal) + Interest Income.
+   See disbursement-entry re: payment-id (display) vs reference-id (uuid)."
+  [{:keys [payment-id principal-portion interest-portion currency reference-id]}]
   (entry (str "Loan payment " payment-id)
-         :payment payment-id
+         :payment (or reference-id payment-id)
          (cond-> [(debit CASH-AT-BANK (+ principal-portion interest-portion) currency)]
            (pos? principal-portion) (conj (credit LOANS-RECEIVABLE principal-portion currency))
            (pos? interest-portion)  (conj (credit INTEREST-INCOME  interest-portion  currency)))))
 
 (defn processing-fee-entry
-  [{:keys [loan-id amount currency]}]
+  [{:keys [loan-id amount currency reference-id]}]
   (entry (str "Processing fee " loan-id)
-         :fee loan-id
+         :fee (or reference-id loan-id)
          [(debit  CASH-AT-BANK    amount currency)
           (credit PROCESSING-FEES amount currency)]))
 

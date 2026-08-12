@@ -57,7 +57,8 @@
             :forbidden  {:status 403 :body {:error "Forbidden"       :message (.getMessage e)}}
             :not-found  {:status 404 :body {:error "Not Found"       :message (.getMessage e)}}
             :validation {:status 422 :body {:error "Validation Error" :details data}}
-            {:status 500 :body {:error "Internal Server Error"}})))
+            (do (log/error e "Unhandled ExceptionInfo" data)
+                {:status 500 :body {:error "Internal Server Error"}}))))
       (catch Exception e
         (log/error e "Unhandled exception")
         {:status 500 :body {:error "Internal Server Error"}}))))

@@ -1,7 +1,7 @@
--- :up
-CREATE TYPE interest_method AS ENUM ('reducing_balance','flat','compound');
-CREATE TYPE repayment_freq  AS ENUM ('daily','weekly','biweekly','monthly','quarterly','bullet');
-
+CREATE TYPE interest_method AS ENUM ('reducing_balance','flat','compound')
+-- ;;
+CREATE TYPE repayment_freq  AS ENUM ('daily','weekly','biweekly','monthly','quarterly','bullet')
+-- ;;
 CREATE TABLE loan_products (
   id                    UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   tenant_id             UUID NOT NULL REFERENCES tenants(id),
@@ -36,9 +36,4 @@ CREATE TABLE loan_products (
   created_by            UUID REFERENCES users(id),
   created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(tenant_id, code)
-);
-
--- :down
-DROP TABLE IF EXISTS loan_products;
-DROP TYPE  IF EXISTS repayment_freq;
-DROP TYPE  IF EXISTS interest_method;
+)

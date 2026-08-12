@@ -1,6 +1,7 @@
 (ns loanmanager.api.routes.collateral
   (:require [loanmanager.api.schemas :as schemas]
             [loanmanager.db.collateral :as collateral-db]
+            [loanmanager.db.loans :as loans-db]
             [loanmanager.db.audit :as audit]
             [loanmanager.security.rbac :as rbac]))
 
@@ -52,18 +53,21 @@
             :handler    (fn [{:keys [identity tenant-id path-params body-params]}]
                           (rbac/require-permission identity :loan/approve)
                           (let [loan-id (parse-uuid (:id path-params))
-                                item    (collateral-db/create! ds
-                                          (assoc body-params
-                                                 :loan-id     loan-id
-                                                 :tenant-id   tenant-id
-                                                 :customer-id nil))]
-                            (audit/log! ds {:tenant-id   tenant-id
-                                            :user-id     (:user-id identity)
-                                            :action      "collateral.attached"
-                                            :entity-type "loan"
-                                            :entity-id   loan-id
-                                            :after-state body-params})
-                            {:status 201 :body item}))}}]
+                                loan    (loans-db/find-loan ds tenant-id loan-id)]
+                            (if-not loan
+                              {:status 404 :body {:error "Loan not found"}}
+                              (let [item (collateral-db/create! ds
+                                           (assoc body-params
+                                                  :loan-id     loan-id
+                                                  :tenant-id   tenant-id
+                                                  :customer-id (:loans/customer-id loan)))]
+                                (audit/log! ds {:tenant-id   tenant-id
+                                                :user-id     (:user-id identity)
+                                                :action      "collateral.attached"
+                                                :entity-type "loan"
+                                                :entity-id   loan-id
+                                                :after-state body-params})
+                                {:status 201 :body item}))))}}]
 
    ["/collateral/:id"
     {:put {:summary    "Update a collateral item (revaluation)"

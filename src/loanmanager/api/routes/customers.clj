@@ -2,7 +2,6 @@
   (:require [loanmanager.api.schemas :as schemas]
             [loanmanager.db.customers :as customers-db]
             [loanmanager.db.audit :as audit]
-            [loanmanager.domain.credit-score :as credit-score]
             [loanmanager.security.rbac :as rbac]))
 
 (defn- next-customer-no []
@@ -67,32 +66,4 @@
                                            :entity-id    id
                                            :before-state old
                                            :after-state  upd})
-                           {:status 200 :body upd}))}}]
-
-   ["/customers/:id/credit-score"
-    {:get {:summary    "Run credit score assessment for a customer"
-           :tags       ["Customers" "Credit"]
-           :parameters {:path [:map [:id :string]]}
-           :handler    (fn [{:keys [identity tenant-id path-params]}]
-                         (rbac/require-permission identity :credit-score/read)
-                         (let [id       (parse-uuid (:id path-params))
-                               customer (customers-db/find-by-id ds tenant-id id)
-                               obligs   (customers-db/total-monthly-obligations ds id)
-                               profile  {:monthly-income           (or (:customers/monthly-income customer) 0)
-                                         :employment-years         (or (:customers/employment-years customer) 0)
-                                         :employment-type          (or (:customers/employment-type customer) "permanent")
-                                         :late-payments-12m        0
-                                         :late-payments-24m        0
-                                         :defaults                 0
-                                         :write-offs               0
-                                         :dti                      (if (pos? (or (:customers/monthly-income customer) 0))
-                                                                     (double (/ obligs (:customers/monthly-income customer)))
-                                                                     1.0)
-                                         :active-facilities        1
-                                         :total-outstanding-debt   (double obligs)
-                                         :avg-monthly-transactions 10
-                                         :avg-monthly-savings      0
-                                         :months-banking           12
-                                         :requested-amount         0}
-                               result   (credit-score/score-with-explanation profile)]
-                           {:status 200 :body result}))}}]])
+                           {:status 200 :body upd}))}}]])

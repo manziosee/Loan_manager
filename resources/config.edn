@@ -1,7 +1,7 @@
 {:server   {:port #long #or [#env PORT "8080"]}
 
  :database {:jdbc-url  #or [#env DATABASE_URL
-                             "jdbc:postgresql://localhost:5432/loanmanager"]
+                             "jdbc:postgresql://localhost:5432/loanmanager?stringtype=unspecified"]
             :username  #or [#env DB_USER "postgres"]
             :password  #or [#env DB_PASS "postgres"]
             :pool-size 10}

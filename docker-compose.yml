@@ -56,7 +56,7 @@ services:
     ports:
       - "8080:8080"
     environment:
-      DATABASE_URL: "jdbc:postgresql://db:5432/loanmanager"
+      DATABASE_URL: "jdbc:postgresql://db:5432/loanmanager?stringtype=unspecified"
       DB_USER:      postgres
       DB_PASS:      postgres
       REDIS_URL:    "redis://redis:6379"

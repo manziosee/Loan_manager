@@ -28,8 +28,12 @@
                :handler    (fn [{{:keys [email password]} :body-params}]
                              (let [user (user-by-email ds email)]
                                (if (and user (hashers/check password (:users/password-hash user)))
-                                 (let [token         (jwt/generate-token user sec-config)
-                                       refresh-token (jwt/generate-refresh-token user sec-config)]
+                                 (let [claims-user   {:id        (:users/id user)
+                                                       :tenant-id (:users/tenant-id user)
+                                                       :role-name (:roles/role-name user)
+                                                       :email     (:users/email user)}
+                                       token         (jwt/generate-token claims-user sec-config)
+                                       refresh-token (jwt/generate-refresh-token claims-user sec-config)]
                                    (audit/log! ds {:tenant-id   (:users/tenant-id user)
                                                    :user-id     (:users/id user)
                                                    :action      "user.login"
@@ -66,7 +70,7 @@
                                       :body   {:access-token (jwt/generate-token
                                                                {:id        (:users/id user)
                                                                 :tenant-id (:users/tenant-id user)
-                                                                :role-name (:users/role-name user)
+                                                                :role-name (:roles/role-name user)
                                                                 :email     (:users/email user)}
                                                                sec-config)
                                                :token-type   "Bearer"

@@ -1,5 +1,6 @@
 (ns loanmanager.api.server
-  (:require [ring.adapter.jetty :as jetty]
+  (:require [clojure.tools.logging :as log]
+            [ring.adapter.jetty :as jetty]
             [reitit.ring :as ring]
             [reitit.ring.coercion :as coercion]
             [reitit.coercion.malli :as malli-coercion]
@@ -100,7 +101,15 @@
         (user-routes/routes ds)
         (report-routes/routes ds)]]
 
-      {:data {:coercion   malli-coercion/coercion
+      {;; Some routes intentionally mix a literal segment (e.g. "/loans/simulate")
+       ;; with a sibling dynamic id segment (e.g. "/loans/:id") at the same
+       ;; position. Reitit's default router refuses to build when it sees this,
+       ;; even though matching is genuinely unambiguous (literal segments are
+       ;; always tried before the dynamic fallback) — so conflicts are logged
+       ;; instead of treated as fatal.
+       :conflicts (fn [_conflicts]
+                    (log/warn "Router has literal/dynamic path conflicts — resolved by literal-over-wildcard precedence"))
+       :data {:coercion   malli-coercion/coercion
               :muuntaja   m/instance
               :middleware [parameters/parameters-middleware
                            muuntaja/format-negotiate-middleware

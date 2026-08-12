@@ -112,9 +112,16 @@ jobs:
       - name: Download dependencies
         run: clojure -P
 
+      - name: Verify migrations apply cleanly
+        env:
+          DATABASE_URL: "jdbc:postgresql://localhost:5432/loanmanager_test?stringtype=unspecified"
+          DB_USER:      postgres
+          DB_PASS:      postgres
+        run: clojure -M:migrate
+
       - name: Run tests
         env:
-          DATABASE_URL: "jdbc:postgresql://localhost:5432/loanmanager_test"
+          DATABASE_URL: "jdbc:postgresql://localhost:5432/loanmanager_test?stringtype=unspecified"
           DB_USER:      postgres
           DB_PASS:      postgres
           JWT_SECRET:   "test-secret-min-32-chars-for-ci-pipeline"
