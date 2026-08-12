@@ -1,6 +1,6 @@
 # LoanOS — Bank-grade Loan Management Platform
 
-[![CI/CD](https://github.com/loanmanager/loanmanager/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/loanmanager/loanmanager/actions/workflows/ci-cd.yml)
+[![CI/CD](https://github.com/manziosee/Loan_manager/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/manziosee/Loan_manager/actions/workflows/ci-cd.yml)
 [![License: Proprietary](https://img.shields.io/badge/license-Proprietary-red.svg)]()
 
 A configurable, event-driven lending platform built in Clojure. Designed for banks, microfinance institutions, SACCOs, and digital lenders.
@@ -476,7 +476,12 @@ resources/
     ├── 005-ledger-audit-events.up.sql  Ledger, collateral, guarantors, audit, events
     ├── 006-delinquency-collections.up.sql  Delinquency log, collection cases, promises
     ├── 007-schema-additions-seed.up.sql    Columns, seed data, default admin
-    └── 008-gaps.up.sql         Indexes, notifications, token blacklist
+    ├── 008-gaps.up.sql         Indexes, notifications, token blacklist
+    └── 009-chart-of-accounts-seed.up.sql    Default chart of accounts
+
+Each migration also has a matching `.down.sql` file — Ragtime expects
+up/down SQL in separate files (statements delimited by `-- ;;`), not a
+single file with `-- :up`/`-- :down` sections.
 
 test/loanmanager/
 ├── domain/
@@ -500,7 +505,7 @@ All configuration is in `resources/config.edn` and overridable via environment v
 | Env Var        | Default                                    | Description              |
 |----------------|--------------------------------------------|--------------------------|
 | `PORT`         | `8080`                                     | HTTP port                |
-| `DATABASE_URL` | `jdbc:postgresql://localhost:5432/loanmanager` | JDBC URL             |
+| `DATABASE_URL` | `jdbc:postgresql://localhost:5432/loanmanager?stringtype=unspecified` | JDBC URL — the `stringtype=unspecified` param is required for Postgres enum columns to accept string bind parameters |
 | `DB_USER`      | `postgres`                                 | DB username              |
 | `DB_PASS`      | `postgres`                                 | DB password              |
 | `JWT_SECRET`   | *(must set in prod)*                       | HS256 signing secret     |
@@ -543,3 +548,9 @@ push/PR → lint → test → build uberjar
 ```
 
 Security scanning: Trivy (CRITICAL/HIGH CVEs) → GitHub Security tab via SARIF upload.
+
+> **Deploy stages are disabled by default.** The staging/production deploy
+> jobs SSH into a real host and need `STAGING_HOST`/`PROD_HOST` (and
+> matching user/key/DB/JWT) secrets plus the repo variables
+> `STAGING_DEPLOY_ENABLED` / `PROD_DEPLOY_ENABLED` set to `true` before
+> they'll run — otherwise they skip cleanly instead of failing the pipeline.
