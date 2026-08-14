@@ -1,7 +1,8 @@
 (ns loanmanager.domain.finance
   "Pure financial calculation functions — no side effects, fully testable.
    Supports: reducing-balance, flat, compound, balloon, interest-only,
-             principal-only, grace periods, all repayment frequencies.")
+             principal-only, grace periods, all repayment frequencies."
+  (:require [clojure.string :as str]))
 
 ;; ── Frequency helpers ─────────────────────────────────────────────────────────
 
@@ -27,7 +28,11 @@
 (defn periodic-rate
   "Interest rate per payment period from annual rate."
   [annual-rate freq]
-  (/ annual-rate (get periods-per-year freq 12)))
+  ;; annual-rate often arrives as a BigDecimal from a NUMERIC DB column;
+  ;; dividing an exact decimal by a non-power-of-10 (e.g. 12 months) can be
+  ;; non-terminating and throws ArithmeticException, so force inexact (double)
+  ;; math here rather than exact rational/decimal math.
+  (/ (double annual-rate) (get periods-per-year freq 12)))
 
 ;; ── Payment formulas ──────────────────────────────────────────────────────────
 
@@ -158,7 +163,17 @@
            currency             "USD"
            grace-period-months  0
            annual-rate          0}}]
-  (let [n-periods           (periods-in-loan duration-months freq)
+  ;; interest_method is stored as an underscored string ("reducing_balance",
+  ;; "interest_only", ...) but dispatch below uses hyphenated keywords —
+  ;; normalize here so every caller (string or keyword, either separator)
+  ;; reaches the right branch instead of silently falling back to default.
+  (let [method              (-> method name (str/replace "_" "-") keyword)
+        ;; principal/annual-rate may arrive as BigDecimal from a NUMERIC DB
+        ;; column — force double so downstream division (e.g. principal /
+        ;; n-periods) can't throw on a non-terminating exact decimal.
+        principal           (double principal)
+        annual-rate         (double annual-rate)
+        n-periods           (periods-in-loan duration-months freq)
         grace-periods       (if (zero? grace-period-months) 0
                                (periods-in-loan grace-period-months freq))
         base                {:principal            principal
@@ -216,7 +231,7 @@
   "Returns DTI ratio as a decimal (e.g. 0.35 = 35%)."
   [monthly-income existing-obligations new-payment]
   (if (pos? monthly-income)
-    (double (/ (+ existing-obligations new-payment) monthly-income))
+    (/ (+ (double existing-obligations) (double new-payment)) (double monthly-income))
     1.0))
 
 (defn dti-analysis
@@ -249,8 +264,47 @@
 
 (defn loan-to-value [loan-amount collateral-value]
   (if (pos? collateral-value)
-    (double (/ loan-amount collateral-value))
+    (/ (double loan-amount) (double collateral-value))
     1.0))
+
+(defn ltv-analysis
+  "Full LTV breakdown with policy assessment.
+   threshold: bank's max acceptable LTV policy (default 0.80 — 80%)."
+  [{:keys [loan-amount collateral-value threshold]
+    :or   {threshold 0.80}}]
+  (let [ltv        (loan-to-value loan-amount collateral-value)
+        eligible?  (<= ltv threshold)]
+    {:loan-amount       (round2 loan-amount)
+     :collateral-value  (round2 collateral-value)
+     :ltv-ratio         (round2 ltv)
+     :ltv-pct           (str (format "%.1f" (* ltv 100)) "%")
+     :threshold-pct     (str (format "%.0f" (* threshold 100)) "%")
+     :eligible?         eligible?
+     :verdict           (if eligible?
+                          "PASS — within policy threshold"
+                          (str "FAIL — exceeds " (format "%.0f" (* threshold 100))
+                               "% LTV threshold by "
+                               (format "%.1f" (* (- ltv threshold) 100)) "%"))}))
+
+;; ── Guarantor capacity ────────────────────────────────────────────────────────
+
+(defn guarantor-capacity
+  "Assesses whether a guarantor has sufficient financial capacity to back a
+   given guarantee amount. Treats the guarantee as an implicit obligation of
+   guarantee-amount/12 (a one-year exposure proxy) and runs it through the
+   same DTI-headroom check used for loan applicants — a guarantor who is
+   already stretched thin shouldn't be accepted just because they signed."
+  [{:keys [monthly-income existing-obligations guarantee-amount threshold]
+    :or   {threshold 0.45}}]
+  (let [implied-monthly (/ (double guarantee-amount) 12)
+        dti-result      (dti-analysis {:monthly-income       monthly-income
+                                        :existing-obligations existing-obligations
+                                        :new-payment          implied-monthly
+                                        :threshold            threshold})]
+    (assoc dti-result
+           :guarantee-amount         (round2 guarantee-amount)
+           :implied-monthly-exposure (round2 implied-monthly)
+           :capacity-verdict         (if (:eligible? dti-result) "SUFFICIENT" "INSUFFICIENT"))))
 
 ;; ── Fees ─────────────────────────────────────────────────────────────────────
 

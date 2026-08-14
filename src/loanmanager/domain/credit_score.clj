@@ -91,7 +91,7 @@
     :positive?   false
     :score-fn    (fn [{:keys [active-facilities total-outstanding-debt monthly-income]}]
                    (let [debt-ratio (if (pos? (or monthly-income 0))
-                                      (/ (or total-outstanding-debt 0) (* (or monthly-income 1) 12))
+                                      (/ (double (or total-outstanding-debt 0)) (* (double (or monthly-income 1)) 12))
                                       1.0)]
                      (cond
                        (>= active-facilities 6) -15
@@ -136,7 +136,7 @@
     :positive?   true
     :score-fn    (fn [{:keys [monthly-income requested-amount]}]
                    (let [ratio (if (pos? (or requested-amount 1))
-                                 (/ (or monthly-income 0) requested-amount)
+                                 (/ (double (or monthly-income 0)) requested-amount)
                                  0)]
                      (cond
                        (> ratio 0.5)  10
@@ -145,7 +145,7 @@
                        :else           0)))
     :finding-fn  (fn [{:keys [monthly-income requested-amount]} score-delta]
                    (let [ratio (double (if (pos? (or requested-amount 1))
-                                         (* 100 (/ (or monthly-income 0) requested-amount))
+                                         (* 100 (/ (double (or monthly-income 0)) requested-amount))
                                          0))]
                      (if (>= score-delta 5)
                        {:type :strength :text (str "Income-to-loan ratio of " (format "%.1f%%" ratio) " is adequate")}

@@ -15,17 +15,18 @@
                  :from   [:customers]
                  :where  [:and [:= :tenant-id tenant-id] [:= :customer-no customer-no]]})))
 
-(defn search [ds tenant-id {:keys [q limit offset] :or {limit 20 offset 0}}]
+(defn search [ds tenant-id {:keys [q limit offset branch-id] :or {limit 20 offset 0}}]
   (jdbc/execute! ds
     (sql/format {:select   [:id :customer-no :first-name :last-name
                              :company-name :email :phone :type :kyc-status]
                  :from     [:customers]
-                 :where    (cond-> [:= :tenant-id tenant-id]
-                             q (conj [:or
-                                      [:ilike :first-name  (str "%" q "%")]
-                                      [:ilike :last-name   (str "%" q "%")]
-                                      [:ilike :email       (str "%" q "%")]
-                                      [:ilike :customer-no (str "%" q "%")]]))
+                 :where    (cond-> [:and [:= :tenant-id tenant-id]]
+                             q         (conj [:or
+                                               [:ilike :first-name  (str "%" q "%")]
+                                               [:ilike :last-name   (str "%" q "%")]
+                                               [:ilike :email       (str "%" q "%")]
+                                               [:ilike :customer-no (str "%" q "%")]])
+                             branch-id (conj [:= :branch-id branch-id]))
                  :limit    limit
                  :offset   offset})))
 

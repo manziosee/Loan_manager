@@ -1,12 +1,23 @@
 (ns loanmanager.api.routes.delinquency
   (:require [loanmanager.db.loans :as loans-db]
             [loanmanager.db.collections :as coll-db]
+            [loanmanager.db.customers :as customers-db]
             [loanmanager.domain.delinquency :as delinquency]
             [loanmanager.domain.collections :as collections]
             [loanmanager.events.bus :as events]
+            [loanmanager.notifications.email :as email]
             [loanmanager.security.rbac :as rbac]))
 
-(defn routes [ds bus]
+(defn- send-reminder-email! [ds email-config tenant-id loan bucket-label days-overdue]
+  (when-let [customer (customers-db/find-by-id ds tenant-id (:loans/customer-id loan))]
+    (email/send! email-config
+      {:to      (:customers/email customer)
+       :subject (str "Payment reminder — loan " (:loans/loan-no loan))
+       :body    (str "Your loan " (:loans/loan-no loan) " is " days-overdue
+                     " day(s) overdue (" bucket-label "). Please make a payment "
+                     "as soon as possible to avoid further action.")})))
+
+(defn routes [ds email-config bus]
   [["/loans/:id/delinquency"
     {:get {:summary    "Get delinquency assessment for a loan"
            :tags       ["Delinquency"]
@@ -73,6 +84,12 @@
                                                                            :tenant-id  tenant-id
                                                                            :loan-id    (:loans/id loan)
                                                                            :bucket     (name (:bucket result))}))
+                                                   ;; :send-sms-reminder / :call-customer stay logged-only
+                                                   ;; (see loanmanager.notifications.email docstring) — email
+                                                   ;; is the one channel actually wired to a real provider.
+                                                   (when ((set (:triggered-actions result)) :send-email-reminder)
+                                                     (send-reminder-email! ds email-config tenant-id loan
+                                                       (:bucket-label result) (:days-overdue result)))
                                                    result))
                                                loans)
                                 summary  (delinquency/portfolio-summary
@@ -93,4 +110,23 @@
                                                  {:bucket                (delinquency/classify-bucket (:loans/days-overdue l))
                                                   :outstanding-principal (:loans/outstanding-principal l)})
                                                loans))]
-                           {:status 200 :body summary}))}}]])
+                           {:status 200 :body summary}))}}]
+
+   ["/delinquency/stress-test"
+    {:post {:summary    "Portfolio stress scenario — projects expected loss if a
+                         given fraction of the book migrates N delinquency
+                         buckets worse (e.g. \"what if unemployment rises 10%?\")."
+            :tags       ["Delinquency" "Portfolio"]
+            :parameters {:body [:map
+                                [:label           {:optional true} :string]
+                                [:migration-steps  {:optional true} [:int {:min 1}]]
+                                [:migration-rate   {:optional true} [:double {:min 0 :max 1}]]]}
+            :handler    (fn [{:keys [identity tenant-id body-params]}]
+                          (rbac/require-permission identity :portfolio/read)
+                          (let [buckets (loans-db/par-buckets ds tenant-id)
+                                rows    (mapv (fn [b]
+                                                {:bucket      (or (:delinquency-bucket b) (:loans/delinquency-bucket b))
+                                                 :outstanding (double (or (:outstanding b) 0))})
+                                              buckets)]
+                            {:status 200
+                             :body   (delinquency/stress-test rows body-params)}))}}]])

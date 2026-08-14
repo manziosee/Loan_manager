@@ -49,3 +49,20 @@
   [steps workflow-state]
   (let [done (set (:completed-steps workflow-state))]
     (every? #(done (:step %)) steps)))
+
+;; ── Step → role authorization ─────────────────────────────────────────────────
+;; Maker-checker only means something if the right person acts at each step —
+;; otherwise anyone with :application/approve could rubber-stamp every step
+;; themselves. :admin can always act (matches its :all permission elsewhere).
+
+(def ^:private step-required-role
+  {"branch_manager"   :branch-manager
+   "credit_committee" :credit-officer
+   "risk_officer"     :risk-officer
+   "final_approval"   :admin})
+
+(defn authorized-for-step?
+  "True if actor-role may act on the given step name (by role, or :admin)."
+  [step-name actor-role]
+  (or (= :admin actor-role)
+      (= (get step-required-role step-name) actor-role)))

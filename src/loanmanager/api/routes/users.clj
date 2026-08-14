@@ -24,15 +24,15 @@
             :parameters {:body schemas/UserCreate}
             :handler    (fn [{:keys [identity tenant-id body-params]}]
                           (rbac/require-permission identity :user/manage)
-                          (let [{:keys [email full-name password role-id]} body-params
+                          (let [{:keys [email full-name password role-id branch-id]} body-params
                                 user (users-db/create! ds
                                        {:tenant-id     tenant-id
                                         :email         email
                                         :full-name     full-name
                                         :password-hash (hashers/derive password)
                                         :role-id       (parse-uuid role-id)
-                                        :active        true
-                                        :created-by    (:user-id identity)})]
+                                        :branch-id     (some-> branch-id parse-uuid)
+                                        :active        true})]
                             (audit/log! ds {:tenant-id   tenant-id
                                             :user-id     (:user-id identity)
                                             :action      "user.created"

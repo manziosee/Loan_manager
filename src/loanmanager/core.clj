@@ -21,7 +21,7 @@
           _       (migrations/migrate! raw-ds)
           ds      (db/with-kebab-keys raw-ds)
           bus     (events/start! (:events config))
-          _       (event-handlers/register! ds bus)
+          _       (event-handlers/register! ds (:email config) bus)
           handler (server/create-handler config ds bus)
           srv     (server/start-server! handler (get-in config [:server :port]))]
       (reset! state {:config config :raw-ds raw-ds :ds ds :bus bus :server srv})

@@ -6,7 +6,7 @@
 (defn find-by-id [ds tenant-id id]
   (jdbc/execute-one! ds
     (sql/format {:select [:u.id :u.email :u.full-name :u.role-id :u.active
-                          :u.tenant-id :u.created-at :u.updated-at
+                          :u.tenant-id :u.branch-id :u.created-at :u.updated-at
                           [:r.name :role-name] [:r.permissions :permissions]]
                  :from   [[:users :u]]
                  :join   [[:roles :r] [:= :u.role-id :r.id]]
@@ -37,7 +37,7 @@
   (db/execute-one! ds
     (sql/format {:insert-into :users
                  :values      [user]
-                 :returning   [:id :email :full-name :active :tenant-id :role-id :created-at]})))
+                 :returning   [:id :email :full-name :active :tenant-id :role-id :branch-id :created-at]})))
 
 (defn update! [ds tenant-id id changes]
   (db/execute-one! ds

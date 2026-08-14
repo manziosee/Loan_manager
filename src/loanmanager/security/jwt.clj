@@ -10,6 +10,7 @@
    :jti       (new-jti)
    :tenant-id (str (:tenant-id user))
    :role      (str (:role-name user))
+   :branch-id (some-> (:branch-id user) str)
    :email     (:email user)
    :exp       (-> (t/now) (t/>> (t/new-duration expiry-hours :hours)) t/inst)
    :iat       (t/inst (t/now))})
@@ -32,6 +33,7 @@
       {:user-id   (java.util.UUID/fromString (:sub claims))
        :tenant-id (java.util.UUID/fromString (:tenant-id claims))
        :role      (keyword (:role claims))
+       :branch-id (some-> (:branch-id claims) java.util.UUID/fromString)
        :email     (:email claims)
        :claims    claims})))
 

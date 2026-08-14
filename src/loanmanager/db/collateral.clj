@@ -10,6 +10,16 @@
                  :where    [:= :loan-id loan-id]
                  :order-by [[:created-at :asc]]})))
 
+(defn total-valuation
+  "Sum of all collateral attached to a loan — the input to a loan-to-value
+   calculation (loanmanager.domain.finance/loan-to-value)."
+  [ds loan-id]
+  (-> (jdbc/execute-one! ds
+        (sql/format {:select [[[:coalesce [:sum :valuation] 0] :total]]
+                     :from   [:collateral]
+                     :where  [:= :loan-id loan-id]}))
+      vals first))
+
 (defn create! [ds item]
   (db/execute-one! ds
     (sql/format {:insert-into :collateral

@@ -26,7 +26,8 @@
             [loanmanager.api.routes.fraud :as fraud-routes]
             [loanmanager.api.routes.audit :as audit-routes]
             [loanmanager.api.routes.users :as user-routes]
-            [loanmanager.api.routes.reports :as report-routes]))
+            [loanmanager.api.routes.reports :as report-routes]
+            [loanmanager.api.routes.tenants :as tenant-routes]))
 
 (def swagger-tags
   [{:name "System"           :description "Health checks and system status"}
@@ -50,6 +51,7 @@
    {:name "Reports"          :description "Financial and operational reporting"}
    {:name "Notifications"    :description "In-app notification management"}
    {:name "Audit"            :description "Immutable audit trail"}
+   {:name "Tenants"          :description "Multi-tenant provisioning"}
    {:name "Tools"            :description "Public simulation and calculation tools"}])
 
 (defn create-handler [config ds bus]
@@ -92,14 +94,15 @@
         (collateral-routes/routes ds)
         (credit-routes/routes ds)
         (fraud-routes/routes ds)
-        (delinquency-routes/routes ds bus)
+        (delinquency-routes/routes ds (:email config) bus)
         (collection-routes/routes ds)
         (ledger-routes/routes ds)
         (branch-routes/routes ds)
         (notification-routes/routes ds)
         (audit-routes/routes ds)
         (user-routes/routes ds)
-        (report-routes/routes ds)]]
+        (report-routes/routes ds)
+        (tenant-routes/routes ds)]]
 
       {;; Some routes intentionally mix a literal segment (e.g. "/loans/simulate")
        ;; with a sibling dynamic id segment (e.g. "/loans/:id") at the same
@@ -117,6 +120,7 @@
                            muuntaja/format-request-middleware
                            coercion/coerce-exceptions-middleware
                            coercion/coerce-request-middleware
+                           sec/wrap-coerced-query-params
                            coercion/coerce-response-middleware
                            sec/wrap-exception
                            sec/wrap-security-headers

@@ -54,3 +54,21 @@
                     {:type       :forbidden
                      :permission permission
                      :role       (:role identity)}))))
+
+;; ── Branch-scoped data isolation ─────────────────────────────────────────────
+;; A branch manager (or loan officer) should only see customers/loans/
+;; applications at their own branch, not every branch in the tenant. Roles
+;; not listed here (credit-officer, finance, risk-officer, auditor, admin)
+;; are head-office / cross-branch by design and see everything.
+
+(def ^:private branch-scoped-roles #{:branch-manager :loan-officer})
+
+(defn branch-scoped? [role]
+  (contains? branch-scoped-roles role))
+
+(defn scope-branch-id
+  "Returns the branch-id to filter by for this identity, or nil for
+   'no filter' (unscoped roles, or a branch-scoped user with no branch set)."
+  [identity]
+  (when (branch-scoped? (:role identity))
+    (:branch-id identity)))

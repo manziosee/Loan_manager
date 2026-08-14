@@ -12,6 +12,14 @@
 
  :events   {:buffer-size 1024}
 
+ ;; Unset SMTP_HOST leaves email delivery disabled (logged, not sent) —
+ ;; no SMTP server is configured for local/dev use by default.
+ :email    {:smtp-host #or [#env SMTP_HOST nil]
+            :smtp-port #long #or [#env SMTP_PORT "587"]
+            :smtp-user #or [#env SMTP_USER nil]
+            :smtp-pass #or [#env SMTP_PASS nil]
+            :from      #or [#env SMTP_FROM "noreply@loanmanager.local"]}
+
  :swagger  {:title       "LoanOS API"
             :description "Bank-grade Loan Management Platform"
             :version     "1.0.0"}}

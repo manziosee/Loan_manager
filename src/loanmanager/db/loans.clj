@@ -15,7 +15,7 @@
     :bullet    30
     30))
 
-(defn list-loans [ds tenant-id {:keys [status customer-id limit offset]
+(defn list-loans [ds tenant-id {:keys [status customer-id limit offset branch-id]
                                  :or   {limit 20 offset 0}}]
   (jdbc/execute! ds
     (sql/format (cond-> {:select   [:l.* [:c.first-name :customer-first-name]
@@ -24,12 +24,13 @@
                           :from     [[:loans :l]]
                           :join     [[:customers :c]     [:= :l.customer-id :c.id]
                                      [:loan-products :p] [:= :l.product-id :p.id]]
-                          :where    [:= :l.tenant-id tenant-id]
+                          :where    [:and [:= :l.tenant-id tenant-id]]
                           :order-by [[:l.created-at :desc]]
                           :limit    limit
                           :offset   offset}
                   status      (update :where conj [:= :l.status status])
-                  customer-id (update :where conj [:= :l.customer-id customer-id])))))
+                  customer-id (update :where conj [:= :l.customer-id customer-id])
+                  branch-id   (update :where conj [:= :l.branch-id branch-id])))))
 
 (defn create-application! [ds application]
   (db/execute-one! ds
@@ -50,7 +51,7 @@
                  :where     [:and [:= :tenant-id tenant-id] [:= :id id]]
                  :returning [:*]})))
 
-(defn list-applications [ds tenant-id {:keys [status limit offset]
+(defn list-applications [ds tenant-id {:keys [status limit offset branch-id]
                                         :or   {limit 20 offset 0}}]
   (jdbc/execute! ds
     (sql/format (cond-> {:select   [:la.* [:c.first-name :customer-first-name]
@@ -59,10 +60,11 @@
                           :from     [[:loan-applications :la]]
                           :join     [[:customers :c]     [:= :la.customer-id :c.id]
                                      [:loan-products :p] [:= :la.product-id :p.id]]
-                          :where    [:= :la.tenant-id tenant-id]
+                          :where    [:and [:= :la.tenant-id tenant-id]]
                           :limit    limit
                           :offset   offset}
-                  status (update :where conj [:= :la.status (name status)])))))
+                  status    (update :where conj [:= :la.status (name status)])
+                  branch-id (update :where conj [:= :la.branch-id branch-id])))))
 
 (defn applications-last-24h
   "Count of applications this customer has submitted in the last 24 hours —
@@ -141,20 +143,34 @@
   "Persists a generated schedule (loanmanager.domain.finance/build-schedule).
    Its installment maps carry :currency (not a column — currency lives on the
    loan) and no :due-date (required, no schema default), so both need
-   resolving here: due-date = today + (installment-no * period length)."
-  [ds loan-id freq installments]
-  (let [start (t/date)
-        days  (freq->days freq)
-        rows  (mapv (fn [{:keys [installment-no status] :as inst}]
-                      (-> inst
-                          (dissoc :currency :grace-period? :balloon?)
-                          (assoc :loan-id  loan-id
-                                 :status   (name status)
-                                 :due-date (t/>> start (t/new-period (* installment-no days) :days)))))
-                    installments)]
-    (db/execute! ds
-      (sql/format {:insert-into :repayment-schedules
-                   :values      rows}))))
+   resolving here: due-date = today + (installment-no * period length).
+   start-offset shifts installment numbers past any already-paid ones (used
+   when restructuring lays a fresh schedule on top of partial payment
+   history) so it doesn't collide with the UNIQUE(loan_id, installment_no)
+   constraint; ordinary disbursement passes 0."
+  ([ds loan-id freq installments] (insert-schedule! ds loan-id freq installments 0))
+  ([ds loan-id freq installments start-offset]
+   (let [start (t/date)
+         days  (freq->days freq)
+         rows  (mapv (fn [{:keys [installment-no status] :as inst}]
+                       (let [no (+ installment-no start-offset)]
+                         (-> inst
+                             (dissoc :currency :grace-period? :balloon?)
+                             (assoc :loan-id       loan-id
+                                    :installment-no no
+                                    :status        (name status)
+                                    :due-date      (t/>> start (t/new-period (* no days) :days))))))
+                     installments)]
+     (db/execute! ds
+       (sql/format {:insert-into :repayment-schedules
+                    :values      rows})))))
+
+(defn max-installment-no [ds loan-id]
+  (-> (jdbc/execute-one! ds
+        (sql/format {:select [[[:coalesce [:max :installment-no] 0] :max-no]]
+                     :from   [:repayment-schedules]
+                     :where  [:= :loan-id loan-id]}))
+      vals first))
 
 (defn get-schedule [ds loan-id]
   (jdbc/execute! ds
@@ -162,6 +178,15 @@
                  :from     [:repayment-schedules]
                  :where    [:= :loan-id loan-id]
                  :order-by [[:installment-no :asc]]})))
+
+(defn delete-pending-schedule!
+  "Removes not-yet-due installments so a restructure can lay down a fresh
+   schedule for the remaining term. Paid/partial installments are left
+   alone — they're real payment history, not a plan to be replaced."
+  [ds loan-id]
+  (jdbc/execute! ds
+    (sql/format {:delete-from :repayment-schedules
+                 :where       [:and [:= :loan-id loan-id] [:= :status "pending"]]})))
 
 (defn next-due-installment [ds loan-id]
   (jdbc/execute-one! ds
@@ -280,12 +305,30 @@
   (db/execute-one! ds
     (sql/format {:update    :loans
                  :set       (assoc changes
-                                   :restructured-at [:now]
-                                   :restructured-by restructured-by
-                                   :status          "active"
-                                   :updated-at      [:now])
+                                   :restructured-at   [:now]
+                                   :restructured-by   restructured-by
+                                   :restructure-count [:+ :restructure-count 1]
+                                   :status            "active"
+                                   :updated-at        [:now])
                  :where     [:and [:= :tenant-id tenant-id] [:= :id loan-id]]
                  :returning [:*]})))
+
+(defn log-restructuring!
+  "Snapshots the loan's terms BEFORE a restructure is applied — this is what
+   makes 'Restructuring #1 -> #2' a real, queryable history instead of an
+   in-place overwrite that destroys the original terms."
+  [ds entry]
+  (db/execute-one! ds
+    (sql/format {:insert-into :loan-restructurings
+                 :values      [entry]
+                 :returning   [:*]})))
+
+(defn restructuring-history [ds loan-id]
+  (jdbc/execute! ds
+    (sql/format {:select   [:*]
+                 :from     [:loan-restructurings]
+                 :where    [:= :loan-id loan-id]
+                 :order-by [[:sequence-no :asc]]})))
 
 ;; ── Report queries ────────────────────────────────────────────────────────────
 
@@ -311,19 +354,19 @@
 
 (defn disbursements-by-period [ds tenant-id from-date to-date]
   (jdbc/execute! ds
-    (sql/format {:select   [[[:date-trunc "month" :disbursed-at] :month]
+    (sql/format {:select   [[[:date_trunc [:inline "month"] :disbursed-at] :month]
                             [[:count :id] :count]
                             [[:sum :principal] :total-disbursed]]
                  :from     [:loans]
                  :where    [:and [:= :tenant-id tenant-id]
                                  [:>= :disbursed-at from-date]
                                  [:<= :disbursed-at to-date]]
-                 :group-by [[:date-trunc "month" :disbursed-at]]
-                 :order-by [[[:date-trunc "month" :disbursed-at] :asc]]})))
+                 :group-by [[:date_trunc [:inline "month"] :disbursed-at]]
+                 :order-by [[[:date_trunc [:inline "month"] :disbursed-at] :asc]]})))
 
 (defn income-by-period [ds tenant-id from-date to-date]
   (jdbc/execute! ds
-    (sql/format {:select   [[[:date-trunc "month" :payment-date] :month]
+    (sql/format {:select   [[[:date_trunc [:inline "month"] :payment-date] :month]
                             [[:sum :interest-portion] :interest-income]
                             [[:sum :principal-portion] :principal-collected]
                             [[:count :id] :payment-count]]
@@ -335,12 +378,12 @@
                             [:= :reversed false]
                             [:>= :payment-date from-date]
                             [:<= :payment-date to-date]]
-                 :group-by [[:date-trunc "month" :payment-date]]
-                 :order-by [[[:date-trunc "month" :payment-date] :asc]]})))
+                 :group-by [[:date_trunc [:inline "month"] :payment-date]]
+                 :order-by [[[:date_trunc [:inline "month"] :payment-date] :asc]]})))
 
 (defn collections-performance [ds tenant-id from-date to-date]
   (jdbc/execute! ds
-    (sql/format {:select   [[[:date-trunc "month" :ca.recorded-at] :month]
+    (sql/format {:select   [[[:date_trunc [:inline "month"] :ca.recorded-at] :month]
                             [:ca.activity-type]
                             [[:count :ca.id] :count]]
                  :from     [[:collection-activities :ca]]
@@ -348,5 +391,5 @@
                  :where    [:and [:= :cc.tenant-id tenant-id]
                                  [:>= :ca.recorded-at from-date]
                                  [:<= :ca.recorded-at to-date]]
-                 :group-by [[:date-trunc "month" :ca.recorded-at] :ca.activity-type]
-                 :order-by [[[:date-trunc "month" :ca.recorded-at] :asc]]})))
+                 :group-by [[:date_trunc [:inline "month"] :ca.recorded-at] :ca.activity-type]
+                 :order-by [[[:date_trunc [:inline "month"] :ca.recorded-at] :asc]]})))

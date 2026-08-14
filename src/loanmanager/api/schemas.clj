@@ -9,7 +9,8 @@
 (def LoginRequest
   [:map
    [:email    [:string {:min 3 :max 255}]]
-   [:password [:string {:min 6 :max 100}]]])
+   [:password [:string {:min 6 :max 100}]]
+   [:mfa-code {:optional true} [:string {:min 6 :max 6}]]])
 
 (def TokenResponse
   [:map
@@ -67,8 +68,11 @@
 
 (def ApprovalAction
   [:map
-   [:action   [:enum "approved" "rejected" "returned"]]
-   [:comments {:optional true} :string]])
+   [:action            [:enum "approved" "rejected" "returned"]]
+   [:comments          {:optional true} :string]
+   [:approved-amount   {:optional true} [:double {:min 1}]]
+   [:approved-rate     {:optional true} [:double {:min 0}]]
+   [:approved-duration {:optional true} [:int {:min 1}]]])
 
 ;; ── Payment ───────────────────────────────────────────────────────────────────
 (def PaymentCreate
@@ -130,7 +134,8 @@
    [:email     [:string {:min 3 :max 255}]]
    [:full-name [:string {:min 1 :max 200}]]
    [:password  [:string {:min 8 :max 100}]]
-   [:role-id   UUID-str]])
+   [:role-id   UUID-str]
+   [:branch-id {:optional true} UUID-str]])
 
 (def UserUpdate
   [:map
@@ -192,8 +197,9 @@
 ;; ── Report date range ─────────────────────────────────────────────────────────
 (def DateRangeQuery
   [:map
-   [:from :string]
-   [:to   :string]])
+   [:from   :string]
+   [:to     :string]
+   [:format {:optional true} [:enum "json" "csv"]]])
 
 ;; ── Collections ──────────────────────────────────────────────────────────────
 (def ActivityCreate

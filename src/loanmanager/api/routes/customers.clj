@@ -18,7 +18,8 @@
             :handler    (fn [{:keys [identity tenant-id query-params]}]
                           (rbac/require-permission identity :customer/read)
                           {:status 200
-                           :body   (customers-db/search ds tenant-id query-params)})}
+                           :body   (customers-db/search ds tenant-id
+                                     (assoc query-params :branch-id (rbac/scope-branch-id identity)))})}
 
      :post {:summary    "Create a new customer"
             :tags       ["Customers"]
@@ -29,6 +30,7 @@
                                           ds
                                           (assoc body-params
                                                  :tenant-id   tenant-id
+                                                 :branch-id   (:branch-id identity)
                                                  :customer-no (next-customer-no)
                                                  :created-by  (:user-id identity)))]
                             (audit/log! ds {:tenant-id   tenant-id

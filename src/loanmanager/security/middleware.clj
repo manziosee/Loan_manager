@@ -3,26 +3,10 @@
             [loanmanager.security.jwt :as jwt]
             [loanmanager.security.token-store :as token-store]))
 
-;; ── Login rate limiter (in-memory, per email) ─────────────────────────────────
-(defonce ^:private login-attempts (atom {}))
-(def ^:private max-attempts 10)
-(def ^:private window-ms    (* 15 60 1000))  ; 15 minutes
-
-(defn- count-recent-attempts [email]
-  (let [now    (System/currentTimeMillis)
-        cutoff (- now window-ms)]
-    (count (filter #(> % cutoff) (get @login-attempts email [])))))
-
-(defn record-login-attempt! [email]
-  (swap! login-attempts update email
-         (fn [ts] (let [now    (System/currentTimeMillis)
-                        cutoff (- now window-ms)]
-                    (conj (filterv #(> % cutoff) (or ts [])) now)))))
-
-(defn login-rate-limited? [email]
-  (>= (count-recent-attempts email) max-attempts))
-
 ;; ── Auth middleware ────────────────────────────────────────────────────────────
+;; Login rate limiting lives in loanmanager.db.security (DB-backed, via the
+;; login_attempts table) since it needs to survive restarts and work across
+;; more than one app instance — see routes/auth.clj for where it's applied.
 
 (defn wrap-authentication [handler config]
   (fn [request]
@@ -84,6 +68,19 @@
                  "X-XSS-Protection"          "1; mode=block"
                  "Strict-Transport-Security" "max-age=31536000; includeSubDomains"
                  "Content-Security-Policy"   "default-src 'self'"}))))
+
+(defn wrap-coerced-query-params
+  "Reitit's coerce-request-middleware writes coerced query params to
+   (:parameters request) :query only — it never rewrites the raw, string-keyed
+   :query-params ring produces from the URL. Handlers across this codebase
+   destructure :query-params directly expecting coerced/keyword-keyed values,
+   so backfill it here once, centrally, instead of touching every handler.
+   Must run after reitit's coerce-request-middleware in the chain."
+  [handler]
+  (fn [request]
+    (let [coerced-query (get-in request [:parameters :query])]
+      (handler (cond-> request
+                 coerced-query (assoc :query-params coerced-query))))))
 
 (defn client-ip [request]
   (or (get-in request [:headers "x-forwarded-for"])
