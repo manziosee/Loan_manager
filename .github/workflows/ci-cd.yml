@@ -253,7 +253,12 @@ jobs:
         if: always()
         continue-on-error: true
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
+          # Docker refs must be lowercase; env.IMAGE_NAME (github.repository)
+          # preserves the repo's mixed case ("Loan_manager"), which Trivy
+          # can't parse. metadata-action already lowercases correctly for
+          # the actual pushed tags, so reuse its first tag instead of
+          # re-deriving the ref by hand.
+          image-ref: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
           format: sarif
           output: trivy-results.sarif
           severity: CRITICAL,HIGH
@@ -278,6 +283,13 @@ jobs:
       url: https://staging.loanmanager.example.com
 
     steps:
+      # Docker refs must be lowercase; env.IMAGE_NAME (github.repository)
+      # preserves the repo's mixed case ("Loan_manager"), which doesn't
+      # match what was actually pushed (metadata-action lowercases it in
+      # the docker job) — pull would 404 on a real host.
+      - name: Set lowercase image name
+        run: echo "IMAGE_NAME_LC=$(echo '${{ env.IMAGE_NAME }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
       - name: Deploy to staging
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -285,7 +297,7 @@ jobs:
           username: ${{ secrets.STAGING_USER }}
           key:      ${{ secrets.STAGING_SSH_KEY }}
           script: |
-            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:develop
+            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LC }}:develop
             docker stop loanmanager-staging || true
             docker rm   loanmanager-staging || true
             docker run -d \
@@ -297,7 +309,7 @@ jobs:
               -e DB_PASS="${{ secrets.STAGING_DB_PASS }}" \
               -e JWT_SECRET="${{ secrets.STAGING_JWT_SECRET }}" \
               -e LOG_FORMAT="json" \
-              ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:develop
+              ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LC }}:develop
 
       - name: Smoke test staging
         run: |
@@ -321,6 +333,11 @@ jobs:
       url: https://api.loanmanager.example.com
 
     steps:
+      # See the matching comment in deploy-staging — docker refs must be
+      # lowercase, and env.IMAGE_NAME preserves the repo's mixed case.
+      - name: Set lowercase image name
+        run: echo "IMAGE_NAME_LC=$(echo '${{ env.IMAGE_NAME }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
       - name: Deploy to production
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -328,7 +345,7 @@ jobs:
           username: ${{ secrets.PROD_USER }}
           key:      ${{ secrets.PROD_SSH_KEY }}
           script: |
-            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LC }}:latest
             docker stop loanmanager-prod || true
             docker rm   loanmanager-prod || true
             docker run -d \
@@ -340,7 +357,7 @@ jobs:
               -e DB_PASS="${{ secrets.PROD_DB_PASS }}" \
               -e JWT_SECRET="${{ secrets.PROD_JWT_SECRET }}" \
               -e LOG_FORMAT="json" \
-              ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+              ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LC }}:latest
 
       - name: Smoke test production
         run: |
