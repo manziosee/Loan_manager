@@ -17,6 +17,15 @@ jobs:
   run-delinquency-job:
     name: Run Delinquency Classification
     runs-on: ubuntu-latest
+    # Skips cleanly (instead of failing) until a real environment is
+    # configured — mirrors the deploy-job gating in ci-cd.yml. Without a
+    # real PROD_API_URL/PROD_SERVICE_TOKEN, curl gets an empty/malformed
+    # URL and the job fails on every scheduled run.
+    if: |
+      (github.event.inputs.environment || 'production') == 'staging'
+        && vars.STAGING_DEPLOY_ENABLED == 'true'
+      || (github.event.inputs.environment || 'production') == 'production'
+        && vars.PROD_DEPLOY_ENABLED == 'true'
 
     steps:
       - name: Trigger delinquency classification via API
