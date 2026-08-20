@@ -15,6 +15,7 @@
 (def TokenResponse
   [:map
    [:access-token  :string]
+   [:refresh-token {:optional true} :string]
    [:token-type    :string]
    [:expires-in    :int]])
 
@@ -150,6 +151,15 @@
 
 (def ResetPasswordRequest
   [:map
+   [:new-password [:string {:min 8 :max 100}]]])
+
+(def ForgotPasswordRequest
+  [:map
+   [:email [:string {:min 3 :max 255}]]])
+
+(def ResetPasswordConfirm
+  [:map
+   [:token        :string]
    [:new-password [:string {:min 8 :max 100}]]])
 
 (def RefreshRequest

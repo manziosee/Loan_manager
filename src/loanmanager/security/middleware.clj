@@ -8,14 +8,14 @@
 ;; login_attempts table) since it needs to survive restarts and work across
 ;; more than one app instance — see routes/auth.clj for where it's applied.
 
-(defn wrap-authentication [handler config]
+(defn wrap-authentication [handler ds config]
   (fn [request]
     (let [auth-header (get-in request [:headers "authorization"])
           token       (when (and auth-header (.startsWith auth-header "Bearer "))
                         (subs auth-header 7))
           identity    (when token (jwt/token->identity token config))
           jti         (get-in identity [:claims :jti])
-          identity    (when (and identity (not (token-store/blacklisted? jti)))
+          identity    (when (and identity (not (token-store/blacklisted? ds jti)))
                         identity)]
       (handler (assoc request :identity identity :raw-token token)))))
 
@@ -86,3 +86,33 @@
   (or (get-in request [:headers "x-forwarded-for"])
       (get-in request [:headers "x-real-ip"])
       (some-> request :remote-addr)))
+
+;; ── General request throttling ───────────────────────────────────────────────
+;; Previously only /auth/login had any throttling — every other endpoint had
+;; unlimited request volume for a valid (or stolen) token. This is a coarse,
+;; global, per-IP fixed-window counter: in-memory and per-process, which is
+;; fine for basic abuse/DoS protection on a single node, but a multi-instance
+;; deployment would need a shared store (Redis is already provisioned in
+;; docker-compose but unused elsewhere) for a limit that holds globally.
+
+(defonce ^:private request-counts (atom {}))
+(def ^:private window-ms 60000)
+
+(defn- exempt? [request]
+  (.startsWith ^String (:uri request "") "/api/v1/health"))
+
+(defn wrap-rate-limit [handler {:keys [requests-per-minute] :or {requests-per-minute 300}}]
+  (fn [request]
+    (if (exempt? request)
+      (handler request)
+      (let [rkey  (or (client-ip request) "unknown")
+            now   (System/currentTimeMillis)
+            state (get (swap! request-counts update rkey
+                              (fn [{:keys [window-start count] :or {window-start now count 0}}]
+                                (if (> (- now window-start) window-ms)
+                                  {:window-start now :count 1}
+                                  {:window-start window-start :count (inc count)})))
+                       rkey)]
+        (if (> (:count state) requests-per-minute)
+          {:status 429 :body {:error "Rate limit exceeded — slow down"}}
+          (handler request))))))

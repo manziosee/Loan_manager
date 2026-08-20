@@ -84,10 +84,10 @@
 
        ;; ── Protected routes (JWT required) ───────────────────────────────────
        ["/api/v1"
-        {:middleware [[sec/wrap-authentication sec-config]
+        {:middleware [[sec/wrap-authentication ds sec-config]
                       sec/wrap-require-auth
                       sec/wrap-tenant]}
-        (customer-routes/routes ds)
+        (customer-routes/routes ds (get-in config [:storage :upload-dir]))
         (product-routes/routes ds)
         (loan-routes/routes ds bus)
         (repayment-routes/routes ds bus)
@@ -117,6 +117,13 @@
               :middleware [parameters/parameters-middleware
                            muuntaja/format-negotiate-middleware
                            muuntaja/format-response-middleware
+                           ;; Must run inside (nested within) format-response-
+                           ;; middleware — its short-circuited 429 body is a
+                           ;; raw Clojure map, and only survives to the client
+                           ;; as JSON if format-response-middleware is still
+                           ;; outer to it, since a short-circuit never reaches
+                           ;; middleware declared later than itself.
+                           [sec/wrap-rate-limit (:rate-limit config)]
                            muuntaja/format-request-middleware
                            coercion/coerce-exceptions-middleware
                            coercion/coerce-request-middleware

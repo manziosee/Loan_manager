@@ -12,6 +12,12 @@
 
  :events   {:buffer-size 1024}
 
+ :rate-limit {:requests-per-minute #long #or [#env RATE_LIMIT_RPM "300"]}
+
+ ;; Local-disk KYC document storage — no cloud storage credentials are
+ ;; available in this environment; see loanmanager.storage.local.
+ :storage  {:upload-dir #or [#env UPLOAD_DIR "./data/uploads"]}
+
  ;; Unset SMTP_HOST leaves email delivery disabled (logged, not sent) —
  ;; no SMTP server is configured for local/dev use by default.
  :email    {:smtp-host #or [#env SMTP_HOST nil]

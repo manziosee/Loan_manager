@@ -19,6 +19,12 @@ RUN apk add --no-cache curl
 
 # Non-root user
 RUN addgroup -S loanmanager && adduser -S loanmanager -G loanmanager
+
+# WORKDIR is created while still root, so the default KYC upload directory
+# needs to exist and be writable before switching users — otherwise
+# loanmanager.storage.local's mkdirs at runtime fails with permission denied.
+RUN mkdir -p /app/data/uploads && chown -R loanmanager:loanmanager /app/data
+
 USER loanmanager
 
 COPY --from=builder --chown=loanmanager:loanmanager /app/target/loanmanager.jar .

@@ -73,6 +73,12 @@
                  :values      [doc]
                  :returning   [:*]})))
 
+(defn find-document [ds customer-id doc-id]
+  (jdbc/execute-one! ds
+    (sql/format {:select [:*]
+                 :from   [:customer-documents]
+                 :where  [:and [:= :customer-id customer-id] [:= :id doc-id]]})))
+
 ;; ── Liabilities ───────────────────────────────────────────────────────────────
 
 (defn liabilities [ds customer-id]

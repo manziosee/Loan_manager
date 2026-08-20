@@ -1,23 +1,21 @@
 (ns loanmanager.security.token-store
-  "JWT blacklist backed by in-memory atom (dev) or DB (prod).
-   Uses :jti claim for per-token revocation — not :sub.")
+  "JWT access-token blacklist, DB-backed via loanmanager.db.tokens (the
+   token_blacklist table, jti VARCHAR(100) — added in migration 008-gaps but
+   never actually queried until now). Uses the :jti claim for per-token
+   revocation — not :sub, since a user can hold several concurrently-valid
+   tokens.
 
-(defonce ^:private blacklist (atom {}))
+   Previously this was an in-memory atom that reset on every restart or
+   redeploy, silently un-revoking every blacklisted token despite this
+   namespace's own docstring claiming DB-backing already existed."
+  (:require [loanmanager.db.tokens :as tokens-db]))
 
-(defn blacklist! [jti expires-at-ms]
-  (swap! blacklist assoc jti expires-at-ms))
-
-(defn blacklisted? [jti]
-  (when-let [exp (get @blacklist jti)]
-    (< (System/currentTimeMillis) exp)))
-
-(defn- prune! []
-  (let [now (System/currentTimeMillis)]
-    (swap! blacklist (fn [m] (into {} (filter #(> (val %) now) m))))))
+(defn blacklisted? [ds jti]
+  (boolean (and jti (tokens-db/blacklisted? ds jti))))
 
 (defn blacklist-token!
-  "Blacklist a decoded claims map by its :jti until :exp."
-  [{:keys [jti exp]}]
+  "Blacklist a decoded claims map by its :jti until :exp (epoch seconds, as
+   produced by buddy.sign.jwt/unsign)."
+  [ds {:keys [jti exp]}]
   (when jti
-    (prune!)
-    (blacklist! jti (long (* exp 1000)))))
+    (tokens-db/blacklist! ds jti (java.sql.Timestamp. (* (long exp) 1000)))))

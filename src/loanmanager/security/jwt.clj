@@ -37,11 +37,21 @@
        :email     (:email claims)
        :claims    claims})))
 
-(defn generate-refresh-token [user {:keys [jwt-secret]}]
-  (jwt/sign {:sub       (str (:id user))
-             :jti       (new-jti)
-             :tenant-id (str (:tenant-id user))
-             :type      "refresh"
-             :exp       (-> (t/now) (t/>> (t/new-duration 30 :days)) t/inst)
-             :iat       (t/inst (t/now))}
-            jwt-secret {:alg :hs256}))
+(defn generate-refresh-token
+  "Returns {:token ... :jti ... :expires-at ...} rather than a bare token
+   string — callers persist :jti/:expires-at (loanmanager.db.tokens) so the
+   refresh token can be individually revoked on logout or bulk-revoked on
+   password change, instead of remaining a stateless, unrevocable JWT for
+   its full 30-day life."
+  [user {:keys [jwt-secret]}]
+  (let [jti        (new-jti)
+        expires-at (-> (t/now) (t/>> (t/new-duration 30 :days)) t/inst)]
+    {:token      (jwt/sign {:sub       (str (:id user))
+                             :jti       jti
+                             :tenant-id (str (:tenant-id user))
+                             :type      "refresh"
+                             :exp       expires-at
+                             :iat       (t/inst (t/now))}
+                            jwt-secret {:alg :hs256})
+     :jti        jti
+     :expires-at expires-at}))

@@ -23,7 +23,7 @@
   [email-config {:keys [to subject body]}]
   (cond
     (not (configured? email-config))
-    (log/info "SMTP not configured — skipping email:" subject "to" to)
+    (log/info "SMTP not configured — skipping email:" subject "to" to "\n" body)
 
     (nil? to)
     (log/info "No recipient email — skipping:" subject)
