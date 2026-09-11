@@ -39,12 +39,25 @@
                       :schedule/read    :collection/read   :portfolio/read
                       :user/read}
 
-   :admin           #{:all :user/read :user/manage}})
+   :admin           #{:all :user/read :user/manage}
+
+   ;; Platform-level: manages tenants themselves, not a tenant's business
+   ;; data. Deliberately NOT included in db/tenants.clj's default-roles —
+   ;; new tenants must never get this role. See :platform/manage below.
+   :platform-admin  #{:platform/manage}})
+
+;; Permissions in this set are platform-level (they act across tenants, not
+;; within one) and are NEVER satisfied by a regular :admin's :all wildcard —
+;; :all previously bypassed every permission check with no carve-out, which
+;; let any tenant's admin list/create other tenants via :user/manage's
+;; sibling check. Only a role that explicitly lists one of these permissions
+;; (i.e. :platform-admin) satisfies it now.
+(def ^:private platform-permissions #{:platform/manage})
 
 (defn has-permission? [role permission]
   (let [perms (get permissions role #{})]
-    (or (contains? perms :all)
-        (contains? perms permission))))
+    (or (contains? perms permission)
+        (and (contains? perms :all) (not (contains? platform-permissions permission))))))
 
 (defn require-permission
   "Throws ex-info if identity lacks the required permission."
@@ -68,7 +81,13 @@
 
 (defn scope-branch-id
   "Returns the branch-id to filter by for this identity, or nil for
-   'no filter' (unscoped roles, or a branch-scoped user with no branch set)."
+   'no filter' (unscoped roles only). A branch-scoped role with no branch
+   set is a misconfigured account, not an unscoped one — denies outright
+   rather than silently falling through to an unfiltered result, which is
+   what 'nil means no filter' previously did for this exact case."
   [identity]
-  (when (branch-scoped? (:role identity))
-    (:branch-id identity)))
+  (if (branch-scoped? (:role identity))
+    (or (:branch-id identity)
+        (throw (ex-info "Your account has no assigned branch — contact an administrator"
+                        {:type :forbidden :reason :no-branch-assigned})))
+    nil))

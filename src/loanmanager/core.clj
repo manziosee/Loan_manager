@@ -1,6 +1,7 @@
 (ns loanmanager.core
   (:require [aero.core :as aero]
             [clojure.java.io :as io]
+            [clojure.string :as str]
             [clojure.tools.logging :as log]
             [loanmanager.db.connection :as db]
             [loanmanager.db.migrations :as migrations]
@@ -14,8 +15,29 @@
 (defn load-config []
   (aero/read-config (io/resource "config.edn")))
 
+;; The defaults baked into resources/config.edn and docker-compose.yml exist
+;; so local dev works with zero setup — but nothing previously stopped those
+;; same defaults from silently reaching a real deployment. This is the one
+;; place that distinction matters: refuse to boot rather than run production
+;; traffic on a JWT secret or DB password anyone can read in this repo.
+(def ^:private known-dev-defaults
+  {[:security :jwt-secret]  "change-me-in-production-min-32-chars!!"
+   [:database :password]    "postgres"})
+
+(defn- assert-safe-config! [config]
+  (when (= "production" (:env config))
+    (doseq [[path default] known-dev-defaults]
+      (when (= default (get-in config path))
+        (throw (ex-info (str "Refusing to start with ENV=production while " path
+                             " is still set to its development default. Set a real value.")
+                        {:config-path path}))))
+    (when (str/blank? (get-in config [:security :encryption-key]))
+      (throw (ex-info "Refusing to start with ENV=production without :security :encryption-key (ENCRYPTION_KEY) set."
+                      {:config-path [:security :encryption-key]})))))
+
 (defn start! []
   (let [config (load-config)]
+    (assert-safe-config! config)
     (log/info "Starting LoanOS...")
     (let [raw-ds  (db/init-pool! (:database config))
           _       (migrations/migrate! raw-ds)

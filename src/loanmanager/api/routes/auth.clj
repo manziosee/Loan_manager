@@ -5,6 +5,7 @@
             [loanmanager.api.schemas :as schemas]
             [loanmanager.security.jwt :as jwt]
             [loanmanager.security.mfa :as mfa]
+            [loanmanager.security.crypto :as crypto]
             [loanmanager.security.middleware :as sec]
             [loanmanager.security.token-store :as token-store]
             [loanmanager.security.reset-token :as reset-token]
@@ -57,7 +58,8 @@
                                 :body   {:error "Too many failed login attempts — try again in a few minutes"}}
                                (let [user (user-by-email ds email)
                                      ok?  (boolean (and user (hashers/check password (:users/password-hash user))))
-                                     mfa-secret  (:users/mfa-secret user)
+                                     mfa-secret  (some->> (:users/mfa-secret user)
+                                                          (crypto/decrypt (:encryption-key sec-config)))
                                      mfa-ok?     (or (nil? mfa-secret) (mfa/valid-code? mfa-secret mfa-code))]
                                  (security-db/record-login-attempt! ds
                                    {:tenant-id  (:users/tenant-id user)
@@ -106,7 +108,7 @@
                              (if (mfa/valid-code? (:secret body-params) (:code body-params))
                                (do
                                  (users-db/update! ds (:tenant-id identity) (:user-id identity)
-                                   {:mfa-secret (:secret body-params)})
+                                   {:mfa-secret (crypto/encrypt (:encryption-key sec-config) (:secret body-params))})
                                  {:status 200 :body {:message "MFA enabled."}})
                                {:status 422 :body {:error "Invalid code — check your authenticator app and try again."}}))}}]
 

@@ -56,11 +56,18 @@ services:
     ports:
       - "8080:8080"
     environment:
+      # Matches config.edn's own defaults exactly (not just "similar") so
+      # core.clj's production safety check actually recognizes this file's
+      # placeholders if it's ever deployed unmodified with ENV=production.
+      ENV:          "development"
       DATABASE_URL: "jdbc:postgresql://db:5432/loanmanager?stringtype=unspecified"
       DB_USER:      postgres
       DB_PASS:      postgres
       REDIS_URL:    "redis://redis:6379"
-      JWT_SECRET:   "replace-with-a-secure-secret-min-32-chars!!"
+      JWT_SECRET:   "change-me-in-production-min-32-chars!!"
+      # Dev-only key so MFA enrollment works out of the box locally — a real
+      # deployment must set its own via a secret manager, not this file.
+      ENCRYPTION_KEY: "Bakokmnp9kAeX5+21sc++tK5/A4KKNTMKMRk6NDxkrY="
       PORT:         "8080"
       LOG_FORMAT:   "json"
     depends_on:

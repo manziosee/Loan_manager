@@ -1,4 +1,9 @@
-{:server   {:port #long #or [#env PORT "8080"]}
+{;; "development" (default) or "production" — see core.clj's startup check,
+ ;; which refuses to boot with a default JWT/DB secret when this is
+ ;; "production". Set explicitly in any real deployment.
+ :env      #or [#env ENV "development"]
+
+ :server   {:port #long #or [#env PORT "8080"]}
 
  :database {:jdbc-url  #or [#env DATABASE_URL
                              "jdbc:postgresql://localhost:5432/loanmanager?stringtype=unspecified"]
@@ -8,7 +13,13 @@
 
  :security {:jwt-secret       #or [#env JWT_SECRET "change-me-in-production-min-32-chars!!"]
             :jwt-expiry-hours 24
-            :bcrypt-cost      12}
+            :bcrypt-cost      12
+            ;; Encrypts sensitive columns at rest (currently: users.mfa_secret)
+            ;; — see loanmanager.security.crypto. No default: unset is fine in
+            ;; dev (MFA enrollment fails loudly with a clear error instead of
+            ;; silently storing plaintext), but core.clj's startup check
+            ;; refuses to boot in production without it.
+            :encryption-key   #or [#env ENCRYPTION_KEY nil]}
 
  :events   {:buffer-size 1024}
 

@@ -25,7 +25,17 @@
     (is (rbac/has-permission? :collections :collection/create)))
 
   (testing "risk-officer can read fraud"
-    (is (rbac/has-permission? :risk-officer :fraud/read))))
+    (is (rbac/has-permission? :risk-officer :fraud/read)))
+
+  (testing "admin's :all wildcard does NOT satisfy the platform-level permission"
+    (is (not (rbac/has-permission? :admin :platform/manage))))
+
+  (testing "platform-admin has :platform/manage"
+    (is (rbac/has-permission? :platform-admin :platform/manage)))
+
+  (testing "platform-admin has no business permissions"
+    (is (not (rbac/has-permission? :platform-admin :loan/disburse)))
+    (is (not (rbac/has-permission? :platform-admin :customer/read)))))
 
 (deftest require-permission
   (testing "Throws ex-info when permission missing"
@@ -40,3 +50,21 @@
       (rbac/require-permission {:role :auditor} :payment/create)
       (catch clojure.lang.ExceptionInfo e
         (is (= :forbidden (:type (ex-data e))))))))
+
+(deftest scope-branch-id
+  (testing "Branch-scoped role with a branch returns that branch-id"
+    (is (= "b1" (rbac/scope-branch-id {:role :branch-manager :branch-id "b1"}))))
+
+  (testing "Branch-scoped role with NO branch denies outright, doesn't fall through to unfiltered"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no assigned branch"
+                          (rbac/scope-branch-id {:role :loan-officer :branch-id nil}))))
+
+  (testing "Denial exception has :type :forbidden"
+    (try
+      (rbac/scope-branch-id {:role :branch-manager :branch-id nil})
+      (catch clojure.lang.ExceptionInfo e
+        (is (= :forbidden (:type (ex-data e)))))))
+
+  (testing "Unscoped roles are never filtered, regardless of branch-id"
+    (is (nil? (rbac/scope-branch-id {:role :admin :branch-id nil})))
+    (is (nil? (rbac/scope-branch-id {:role :finance :branch-id "b1"})))))

@@ -2,6 +2,7 @@
   (:require [buddy.hashers :as hashers]
             [loanmanager.api.schemas :as schemas]
             [loanmanager.db.users :as users-db]
+            [loanmanager.db.roles :as roles-db]
             [loanmanager.db.audit :as audit]
             [loanmanager.security.rbac :as rbac]))
 
@@ -25,21 +26,24 @@
             :handler    (fn [{:keys [identity tenant-id body-params]}]
                           (rbac/require-permission identity :user/manage)
                           (let [{:keys [email full-name password role-id branch-id]} body-params
-                                user (users-db/create! ds
-                                       {:tenant-id     tenant-id
-                                        :email         email
-                                        :full-name     full-name
-                                        :password-hash (hashers/derive password)
-                                        :role-id       (parse-uuid role-id)
-                                        :branch-id     (some-> branch-id parse-uuid)
-                                        :active        true})]
-                            (audit/log! ds {:tenant-id   tenant-id
-                                            :user-id     (:user-id identity)
-                                            :action      "user.created"
-                                            :entity-type "user"
-                                            :entity-id   (:users/id user)
-                                            :after-state {:email email :role-id role-id}})
-                            {:status 201 :body user}))}}]
+                                role-uuid (parse-uuid role-id)]
+                            (if-not (roles-db/find-by-id-and-tenant ds tenant-id role-uuid)
+                              {:status 422 :body {:error "role-id does not belong to your tenant"}}
+                              (let [user (users-db/create! ds
+                                           {:tenant-id     tenant-id
+                                            :email         email
+                                            :full-name     full-name
+                                            :password-hash (hashers/derive password)
+                                            :role-id       role-uuid
+                                            :branch-id     (some-> branch-id parse-uuid)
+                                            :active        true})]
+                                (audit/log! ds {:tenant-id   tenant-id
+                                                :user-id     (:user-id identity)
+                                                :action      "user.created"
+                                                :entity-type "user"
+                                                :entity-id   (:users/id user)
+                                                :after-state {:email email :role-id role-id}})
+                                {:status 201 :body user}))))}}]
 
    ["/users/:id"
     {:get {:summary    "Get user by ID"
@@ -58,21 +62,24 @@
                         :body schemas/UserUpdate}
            :handler    (fn [{:keys [identity tenant-id path-params body-params]}]
                          (rbac/require-permission identity :user/manage)
-                         (let [id  (parse-uuid (:id path-params))
-                               old (users-db/find-by-id ds tenant-id id)
-                               upd (users-db/update! ds tenant-id id
-                                     (cond-> {}
-                                       (:full-name body-params) (assoc :full-name (:full-name body-params))
-                                       (:role-id   body-params) (assoc :role-id (parse-uuid (:role-id body-params)))
-                                       (some? (:active body-params)) (assoc :active (:active body-params))))]
-                           (audit/log! ds {:tenant-id    tenant-id
-                                           :user-id      (:user-id identity)
-                                           :action       "user.updated"
-                                           :entity-type  "user"
-                                           :entity-id    id
-                                           :before-state {:role-id (:users/role-id old) :active (:users/active old)}
-                                           :after-state  body-params})
-                           {:status 200 :body upd}))}}]
+                         (let [id           (parse-uuid (:id path-params))
+                               new-role-id  (some-> (:role-id body-params) parse-uuid)]
+                           (if (and new-role-id (not (roles-db/find-by-id-and-tenant ds tenant-id new-role-id)))
+                             {:status 422 :body {:error "role-id does not belong to your tenant"}}
+                             (let [old (users-db/find-by-id ds tenant-id id)
+                                   upd (users-db/update! ds tenant-id id
+                                         (cond-> {}
+                                           (:full-name body-params) (assoc :full-name (:full-name body-params))
+                                           new-role-id                    (assoc :role-id new-role-id)
+                                           (some? (:active body-params)) (assoc :active (:active body-params))))]
+                               (audit/log! ds {:tenant-id    tenant-id
+                                               :user-id      (:user-id identity)
+                                               :action       "user.updated"
+                                               :entity-type  "user"
+                                               :entity-id    id
+                                               :before-state {:role-id (:users/role-id old) :active (:users/active old)}
+                                               :after-state  body-params})
+                               {:status 200 :body upd}))))}}]
 
    ["/users/:id/reset-password"
     {:post {:summary    "Admin: reset a user's password"
