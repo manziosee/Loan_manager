@@ -6,6 +6,7 @@
             [loanmanager.db.customers :as customers-db]
             [loanmanager.db.audit :as audit]
             [loanmanager.db.connection :as db]
+            [loanmanager.db.integrations :as integrations-db]
             [loanmanager.domain.finance :as finance]
             [loanmanager.domain.credit-score :as credit-score]
             [loanmanager.domain.fraud :as fraud]
@@ -327,74 +328,104 @@
                            {:status 200 :body loan}
                            {:status 404 :body {:error "Loan not found"}}))}}]
 
-   ["/loans/:id/schedule"
+  ["/loans/:id/schedule"
     {:get {:summary    "Get repayment schedule"
            :tags       ["Loans"]
            :parameters {:path [:map [:id :string]]}
-           :handler    (fn [{:keys [identity path-params]}]
+           :handler    (fn [{:keys [identity tenant-id path-params]}]
                          (rbac/require-permission identity :schedule/read)
                          {:status 200
-                          :body   (loans-db/get-schedule ds (parse-uuid (:id path-params)))})}}]
+                          :body   (loans-db/get-schedule ds tenant-id (parse-uuid (:id path-params)))})}}]
 
    ["/loans/:id/payments"
     {:get  {:summary    "List payments for a loan"
             :tags       ["Payments"]
             :parameters {:path [:map [:id :string]]}
-            :handler    (fn [{:keys [identity path-params]}]
+            :handler    (fn [{:keys [identity tenant-id path-params]}]
                           (rbac/require-permission identity :payment/read)
                           {:status 200
-                           :body   (loans-db/loan-payments ds (parse-uuid (:id path-params)))})}
+                           :body   (loans-db/loan-payments ds tenant-id (parse-uuid (:id path-params)))})}
 
      :post {:summary    "Record a payment"
             :tags       ["Payments"]
             :parameters {:path [:map [:id :string]]
+                 :headers [:map [:idempotency-key :string]]
                          :body schemas/PaymentCreate}
-            :handler    (fn [{:keys [identity tenant-id path-params body-params]}]
+            :handler    (fn [{:keys [identity tenant-id path-params body-params headers]}]
                           (rbac/require-permission identity :payment/create)
                           (let [loan-id (parse-uuid (:id path-params))
                                 loan    (loans-db/find-loan ds tenant-id loan-id)]
                           (if-not loan
                             {:status 404 :body {:error "Loan not found"}}
                           (let [{:keys [amount payment-method reference]} body-params
-                                rate              (/ (:loans/interest-rate loan) 100)
-                                interest-due      (* (:loans/outstanding-principal loan) (/ rate 12))
-                                interest-portion  (min amount interest-due)
-                                principal-portion (- amount interest-portion)
-                                currency          (:loans/currency loan)
-                                payment           (jdbc/with-transaction [tx ds]
-                                                    (let [tx (db/with-kebab-keys tx)
-                                                          payment (loans-db/record-payment! tx
-                                                                    {:tenant-id         tenant-id
-                                                                     :loan-id           loan-id
-                                                                     :payment-no        (pay-no)
-                                                                     :amount            amount
-                                                                     :principal-portion principal-portion
-                                                                     :interest-portion  interest-portion
-                                                                     :payment-method    payment-method
-                                                                     :reference         reference
-                                                                     :recorded-by       (:user-id identity)})
-                                                          ledger-entry (accounting/payment-entry
-                                                                         {:payment-id        (:payments/payment-no payment)
-                                                                          :reference-id      (:payments/id payment)
-                                                                          :principal-portion (double principal-portion)
-                                                                          :interest-portion  (double interest-portion)
-                                                                          :currency          currency})]
-                                                      (accounting/validate-entry ledger-entry)
-                                                      (loans-db/update-loan! tx tenant-id loan-id
-                                                        {:outstanding-principal (- (:loans/outstanding-principal loan) principal-portion)
-                                                         :total-paid-principal  (+ (or (:loans/total-paid-principal loan) 0M) principal-portion)
-                                                         :total-paid-interest   (+ (or (:loans/total-paid-interest loan) 0M) interest-portion)
-                                                         :last-payment-date     [:now]})
-                                                      (ledger/post-entry! tx
-                                                        {:tenant-id tenant-id :posted-by (:user-id identity)}
-                                                        ledger-entry)
-                                                      payment))]
-                            (events/publish! bus {:event-type events/PAYMENT-RECEIVED
-                                                  :tenant-id  tenant-id
-                                                  :loan-id    loan-id
-                                                  :amount     amount
-                                                  :payment-id (:payments/id payment)})
-                            {:status 201 :body payment}))))}}]
+                                idempotency-key (get headers "idempotency-key")
+                                request-hash    (str (hash body-params))
+                                existing        (integrations-db/find-idempotency
+                                                  ds tenant-id idempotency-key)
+                                reservation     (when (and idempotency-key (nil? existing))
+                                                  (integrations-db/begin-idempotency!
+                                                    ds tenant-id idempotency-key request-hash))
+                                record          (or existing reservation)
+                                _               (cond
+                                                  (nil? idempotency-key)
+                                                  (throw (ex-info "Idempotency-Key header is required"
+                                                                  {:type :validation}))
+                                                  (nil? record)
+                                                  (throw (ex-info "A request with this idempotency key is already processing"
+                                                                  {:type :idempotency-in-progress}))
+                                                  (and record
+                                                       (not= request-hash
+                                                             (:idempotency-keys/request-hash record)))
+                                                  (throw (ex-info "Idempotency key was reused for a different request"
+                                                                  {:type :validation}))
+                                                  :else nil)]
+                            (if (:idempotency-keys/completed-at record)
+                              {:status (:idempotency-keys/response-status record)
+                               :body   (:idempotency-keys/response-body record)}
+                              (let [rate              (/ (:loans/interest-rate loan) 100)
+                                    interest-due      (* (:loans/outstanding-principal loan) (/ rate 12))
+                                    interest-portion  (min amount interest-due)
+                                    principal-portion (- amount interest-portion)
+                                    currency          (:loans/currency loan)
+                                    payment           (jdbc/with-transaction [tx ds]
+                                                        (let [tx (db/with-kebab-keys tx)
+                                                              payment (loans-db/record-payment! tx
+                                                                        {:tenant-id         tenant-id
+                                                                         :loan-id           loan-id
+                                                                         :payment-no        (pay-no)
+                                                                         :amount            amount
+                                                                         :principal-portion principal-portion
+                                                                         :interest-portion  interest-portion
+                                                                         :payment-method    payment-method
+                                                                         :reference         reference
+                                                                         :recorded-by       (:user-id identity)})
+                                                              ledger-entry (accounting/payment-entry
+                                                                             {:payment-id        (:payments/payment-no payment)
+                                                                              :reference-id      (:payments/id payment)
+                                                                              :principal-portion principal-portion
+                                                                              :interest-portion  interest-portion
+                                                                              :currency          currency})]
+                                                          (accounting/validate-entry ledger-entry)
+                                                          (loans-db/update-loan! tx tenant-id loan-id
+                                                            {:outstanding-principal (- (:loans/outstanding-principal loan) principal-portion)
+                                                             :total-paid-principal  (+ (or (:loans/total-paid-principal loan) 0M) principal-portion)
+                                                             :total-paid-interest   (+ (or (:loans/total-paid-interest loan) 0M) interest-portion)
+                                                             :last-payment-date     [:now]})
+                                                          (ledger/post-entry! tx
+                                                            {:tenant-id tenant-id :posted-by (:user-id identity)}
+                                                            ledger-entry)
+                                                          payment))
+                                    response          {:status 201 :body payment}]
+                                (integrations-db/complete-idempotency!
+                                  ds tenant-id idempotency-key request-hash
+                                  (:status response) (:body response))
+                                (events/publish! bus {:event-type events/PAYMENT-RECEIVED
+                                                      :tenant-id  tenant-id
+                                                      :loan-id    loan-id
+                                                      :amount     amount
+                                                      :payment-id (:payments/id payment)})
+                                response)
+                              )))))}}]
 
    ["/loans/:id/restructure"
     {:post {:summary    "Restructure a loan (rate/term change). Snapshots the
@@ -464,10 +495,10 @@
     {:get {:summary    "Restructuring history for a loan"
            :tags       ["Loans"]
            :parameters {:path [:map [:id :string]]}
-           :handler    (fn [{:keys [identity path-params]}]
+           :handler    (fn [{:keys [identity tenant-id path-params]}]
                          (rbac/require-permission identity :loan/read)
                          {:status 200
-                          :body   (loans-db/restructuring-history ds (parse-uuid (:id path-params)))})}}]
+                          :body   (loans-db/restructuring-history ds tenant-id (parse-uuid (:id path-params)))})}}]
 
    ["/loans/:id/write-off"
     {:post {:summary    "Write off an NPL loan"

@@ -1,7 +1,8 @@
 (ns loanmanager.security.middleware
   (:require [clojure.tools.logging :as log]
             [loanmanager.security.jwt :as jwt]
-            [loanmanager.security.token-store :as token-store]))
+            [loanmanager.security.token-store :as token-store]
+            [loanmanager.db.users :as users-db]))
 
 ;; ── Auth middleware ────────────────────────────────────────────────────────────
 ;; Login rate limiting lives in loanmanager.db.security (DB-backed, via the
@@ -15,8 +16,14 @@
                         (subs auth-header 7))
           identity    (when token (jwt/token->identity token config))
           jti         (get-in identity [:claims :jti])
-          identity    (when (and identity (not (token-store/blacklisted? ds jti)))
-                        identity)]
+             identity    (when (and identity
+                     (not (token-store/blacklisted? ds jti)))
+                 (when-let [user (users-db/find-active-session-user
+                    ds (:tenant-id identity) (:user-id identity))]
+                   (assoc identity
+                     :role      (keyword (:roles/role-name user))
+                     :branch-id (:users/branch-id user)
+                     :email     (:users/email user))))]
       (handler (assoc request :identity identity :raw-token token)))))
 
 (defn wrap-require-auth [handler]
@@ -40,6 +47,8 @@
           (case type
             :forbidden  {:status 403 :body {:error "Forbidden"       :message (.getMessage e)}}
             :not-found  {:status 404 :body {:error "Not Found"       :message (.getMessage e)}}
+            :idempotency-in-progress {:status 409 :body {:error "Request already in progress"
+                                                         :message (.getMessage e)}}
             :validation {:status 422 :body {:error "Validation Error" :details data}}
             (do (log/error e "Unhandled ExceptionInfo" data)
                 {:status 500 :body {:error "Internal Server Error"}}))))

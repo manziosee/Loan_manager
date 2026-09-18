@@ -172,11 +172,13 @@
                      :where  [:= :loan-id loan-id]}))
       vals first))
 
-(defn get-schedule [ds loan-id]
+(defn get-schedule [ds tenant-id loan-id]
   (jdbc/execute! ds
-    (sql/format {:select   [:*]
-                 :from     [:repayment-schedules]
-                 :where    [:= :loan-id loan-id]
+    (sql/format {:select   [:rs.*]
+                 :from     [[:repayment-schedules :rs]]
+                 :join     [[:loans :l] [:= :rs.loan-id :l.id]]
+                 :where    [:and [:= :rs.loan-id loan-id]
+                                  [:= :l.tenant-id tenant-id]]
                  :order-by [[:installment-no :asc]]})))
 
 (defn delete-pending-schedule!
@@ -203,12 +205,15 @@
                  :values      [payment]
                  :returning   [:*]})))
 
-(defn loan-payments [ds loan-id]
+(defn loan-payments [ds tenant-id loan-id]
   (jdbc/execute! ds
-    (sql/format {:select   [:*]
-                 :from     [:payments]
-                 :where    [:and [:= :loan-id loan-id] [:= :reversed false]]
-                 :order-by [[:payment-date :desc]]})))
+    (sql/format {:select   [:p.*]
+                 :from     [[:payments :p]]
+                 :join     [[:loans :l] [:= :p.loan-id :l.id]]
+                 :where    [:and [:= :p.loan-id loan-id]
+                                  [:= :l.tenant-id tenant-id]
+                                  [:= :p.reversed false]]
+                 :order-by [[:p.payment-date :desc]]})))
 
 (defn overdue-loans [ds tenant-id]
   (jdbc/execute! ds
@@ -323,11 +328,13 @@
                  :values      [entry]
                  :returning   [:*]})))
 
-(defn restructuring-history [ds loan-id]
+(defn restructuring-history [ds tenant-id loan-id]
   (jdbc/execute! ds
-    (sql/format {:select   [:*]
-                 :from     [:loan-restructurings]
-                 :where    [:= :loan-id loan-id]
+    (sql/format {:select   [:r.*]
+                 :from     [[:loan-restructurings :r]]
+                 :join     [[:loans :l] [:= :r.loan-id :l.id]]
+                 :where    [:and [:= :r.loan-id loan-id]
+                                  [:= :l.tenant-id tenant-id]]
                  :order-by [[:sequence-no :asc]]})))
 
 ;; ── Report queries ────────────────────────────────────────────────────────────

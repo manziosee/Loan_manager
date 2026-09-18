@@ -16,12 +16,22 @@
             [loanmanager.db.password-reset :as password-reset-db]
             [loanmanager.notifications.email :as email]))
 
-(defn- user-by-email [ds email]
-  (jdbc/execute-one! ds
-    (sql/format {:select [:u.* [:r.name :role-name] [:r.permissions :permissions]]
-                 :from   [[:users :u]]
-                 :join   [[:roles :r] [:= :u.role-id :r.id]]
-                 :where  [:and [:= :u.email email] [:= :u.active true]]})))
+(defn- user-by-email
+  ([ds email] (user-by-email ds email {}))
+  ([ds email {:keys [tenant-id tenant-code]}]
+   (let [query (cond-> {:select [:u.* [:r.name :role-name] [:r.permissions :permissions]]
+                        :from   [[:users :u]]
+                        :join   [[:roles :r] [:= :u.role-id :r.id]
+                                 [:tenants :t] [:= :u.tenant-id :t.id]]
+                        :where  [:and [:= :u.email email]
+                                       [:= :u.active true]]}
+                 tenant-id   (update :where conj [:= :u.tenant-id tenant-id])
+                 tenant-code (update :where conj [:= :t.code tenant-code]))
+         rows  (jdbc/execute! ds (sql/format query))]
+     ;; Email is tenant-scoped. Without a tenant selector, only accept it when
+     ;; it identifies exactly one active account; never choose arbitrarily.
+     (when (= 1 (count rows))
+       (first rows)))))
 
 (defn- issue-tokens [ds user sec-config expiry-hours]
   (let [claims-user  {:id        (:users/id user)
@@ -52,11 +62,11 @@
                :responses  {200 {:body schemas/TokenResponse}
                             401 {:body [:map [:error :string]
                                         [:mfa-required {:optional true} :boolean]]}}
-               :handler    (fn [{{:keys [email password mfa-code]} :body-params :as request}]
+               :handler    (fn [{{:keys [email password tenant-code mfa-code]} :body-params :as request}]
                              (if (security-db/rate-limited? ds email)
                                {:status 429
                                 :body   {:error "Too many failed login attempts — try again in a few minutes"}}
-                               (let [user (user-by-email ds email)
+                               (let [user (user-by-email ds email {:tenant-code tenant-code})
                                      ok?  (boolean (and user (hashers/check password (:users/password-hash user))))
                                      mfa-secret  (some->> (:users/mfa-secret user)
                                                           (crypto/decrypt (:encryption-key sec-config)))
@@ -119,7 +129,8 @@
                             sec/wrap-require-auth]
                :parameters {:body [:map [:password :string]]}
                :handler    (fn [{:keys [identity body-params]}]
-                             (let [user (user-by-email ds (:email identity))]
+                             (let [user (user-by-email ds (:email identity)
+                                                       {:tenant-id (:tenant-id identity)})]
                                (if (hashers/check (:password body-params) (:users/password-hash user))
                                  (do
                                    (users-db/update! ds (:tenant-id identity) (:user-id identity)
@@ -181,7 +192,8 @@
                             sec/wrap-require-auth]
                :parameters {:body schemas/ChangePasswordRequest}
                :handler    (fn [{:keys [identity body-params]}]
-                             (let [user (user-by-email ds (:email identity))]
+                             (let [user (user-by-email ds (:email identity)
+                                                       {:tenant-id (:tenant-id identity)})]
                                (if (hashers/check (:current-password body-params)
                                                   (:users/password-hash user))
                                  (do

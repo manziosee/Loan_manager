@@ -352,10 +352,12 @@ jobs:
               --name loanmanager-prod \
               --restart unless-stopped \
               -p 8080:8080 \
+              -e ENV="production" \
               -e DATABASE_URL="${{ secrets.PROD_DATABASE_URL }}" \
               -e DB_USER="${{ secrets.PROD_DB_USER }}" \
               -e DB_PASS="${{ secrets.PROD_DB_PASS }}" \
               -e JWT_SECRET="${{ secrets.PROD_JWT_SECRET }}" \
+              -e ENCRYPTION_KEY="${{ secrets.PROD_ENCRYPTION_KEY }}" \
               -e LOG_FORMAT="json" \
               ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LC }}:latest
 

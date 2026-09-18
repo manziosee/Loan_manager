@@ -43,10 +43,10 @@
     {:get  {:summary    "List collateral items for a loan"
             :tags       ["Loans"]
             :parameters {:path [:map [:id :string]]}
-            :handler    (fn [{:keys [identity path-params]}]
+            :handler    (fn [{:keys [identity tenant-id path-params]}]
                           (rbac/require-permission identity :loan/read)
                           {:status 200
-                           :body   (collateral-db/list-for-loan ds (parse-uuid (:id path-params)))})}
+                           :body   (collateral-db/list-for-loan ds tenant-id (parse-uuid (:id path-params)))})}
 
      :post {:summary    "Attach collateral to a loan"
             :tags       ["Loans"]
@@ -63,7 +63,7 @@
                                                          :loan-id     loan-id
                                                          :tenant-id   tenant-id
                                                          :customer-id (:loans/customer-id loan)))
-                                    total-coll (collateral-db/total-valuation ds loan-id)
+                                    total-coll (collateral-db/total-valuation ds tenant-id loan-id)
                                     ltv        (finance/ltv-analysis
                                                  {:loan-amount      (:loans/principal loan)
                                                   :collateral-value (double total-coll)})]
@@ -85,7 +85,7 @@
                                loan    (loans-db/find-loan ds tenant-id loan-id)]
                            (if-not loan
                              {:status 404 :body {:error "Loan not found"}}
-                             (let [total-coll (collateral-db/total-valuation ds loan-id)]
+                             (let [total-coll (collateral-db/total-valuation ds tenant-id loan-id)]
                                {:status 200
                                 :body   (finance/ltv-analysis
                                           {:loan-amount      (:loans/principal loan)
@@ -113,10 +113,10 @@
     {:get  {:summary    "List guarantors for a loan"
             :tags       ["Loans"]
             :parameters {:path [:map [:id :string]]}
-            :handler    (fn [{:keys [identity path-params]}]
+            :handler    (fn [{:keys [identity tenant-id path-params]}]
                           (rbac/require-permission identity :loan/read)
                           {:status 200
-                           :body   (collateral-db/list-guarantors ds (parse-uuid (:id path-params)))})}
+                           :body   (collateral-db/list-guarantors ds tenant-id (parse-uuid (:id path-params)))})}
 
      :post {:summary    "Add a guarantor to a loan"
             :tags       ["Loans"]

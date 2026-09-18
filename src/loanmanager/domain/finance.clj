@@ -2,7 +2,16 @@
   "Pure financial calculation functions — no side effects, fully testable.
    Supports: reducing-balance, flat, compound, balloon, interest-only,
              principal-only, grace periods, all repayment frequencies."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str])
+  (:import [java.math BigDecimal MathContext RoundingMode]))
+
+(def ^:private decimal-context (MathContext. 34 RoundingMode/HALF_EVEN))
+
+(defn- decimal [value]
+  (cond
+    (instance? BigDecimal value) value
+    (nil? value)                BigDecimal/ZERO
+    :else                       (bigdec (str value))))
 
 ;; ── Frequency helpers ─────────────────────────────────────────────────────────
 
@@ -28,11 +37,9 @@
 (defn periodic-rate
   "Interest rate per payment period from annual rate."
   [annual-rate freq]
-  ;; annual-rate often arrives as a BigDecimal from a NUMERIC DB column;
-  ;; dividing an exact decimal by a non-power-of-10 (e.g. 12 months) can be
-  ;; non-terminating and throws ArithmeticException, so force inexact (double)
-  ;; math here rather than exact rational/decimal math.
-  (/ (double annual-rate) (get periods-per-year freq 12)))
+  (.divide (decimal annual-rate)
+           (decimal (get periods-per-year freq 12))
+           decimal-context))
 
 ;; ── Payment formulas ──────────────────────────────────────────────────────────
 
@@ -40,21 +47,29 @@
   "Standard annuity — equal total payment, reducing principal.
    Works for any frequency."
   [principal annual-rate n-periods freq]
-  (let [r (periodic-rate annual-rate freq)]
+  (let [principal (decimal principal)
+        r         (periodic-rate annual-rate freq)
+        growth    (.pow (.add BigDecimal/ONE r) n-periods decimal-context)]
     (if (zero? r)
-      (/ principal n-periods)
-      (* principal (/ (* r (Math/pow (+ 1 r) n-periods))
-                      (- (Math/pow (+ 1 r) n-periods) 1))))))
+      (.divide principal (decimal n-periods) decimal-context)
+      (.multiply principal
+                 (.divide (.multiply r growth)
+                          (.subtract growth BigDecimal/ONE)
+                          decimal-context)
+                 decimal-context))))
 
 (defn flat-periodic-payment
   "Equal principal + flat interest on original principal each period."
   [principal annual-rate n-periods freq]
-  (let [r (periodic-rate annual-rate freq)]
-    (+ (/ principal n-periods) (* principal r))))
+  (let [principal (decimal principal)
+        r         (periodic-rate annual-rate freq)]
+    (+ (.divide principal (decimal n-periods) decimal-context)
+       (.multiply principal r decimal-context))))
 
 ;; ── Schedule builders ─────────────────────────────────────────────────────────
 
-(defn- round2 [n] (bigdec (format "%.2f" (double n))))
+(defn- round2 [n]
+  (.setScale (decimal n) 2 RoundingMode/HALF_EVEN))
 
 (defn- base-installment [n principal-due interest-due currency]
   {:installment-no n
@@ -168,11 +183,10 @@
   ;; normalize here so every caller (string or keyword, either separator)
   ;; reaches the right branch instead of silently falling back to default.
   (let [method              (-> method name (str/replace "_" "-") keyword)
-        ;; principal/annual-rate may arrive as BigDecimal from a NUMERIC DB
-        ;; column — force double so downstream division (e.g. principal /
-        ;; n-periods) can't throw on a non-terminating exact decimal.
-        principal           (double principal)
-        annual-rate         (double annual-rate)
+        ;; principal/annual-rate may arrive as BigDecimal from NUMERIC DB
+        ;; columns; keep them decimal so financial calculations remain exact.
+        principal           (decimal principal)
+        annual-rate         (decimal annual-rate)
         n-periods           (periods-in-loan duration-months freq)
         grace-periods       (if (zero? grace-period-months) 0
                                (periods-in-loan grace-period-months freq))
@@ -197,8 +211,11 @@
    Returns: {:settlement-amount :principal-outstanding :accrued-interest :savings}"
   [{:keys [outstanding-principal annual-rate days-since-last-payment
            original-total-interest total-interest-paid]}]
-  (let [daily-rate      (/ annual-rate 365.0)
-        accrued-interest (* outstanding-principal daily-rate days-since-last-payment)
+    (let [daily-rate      (.divide (decimal annual-rate) (decimal 365) decimal-context)
+      accrued-interest (.multiply (decimal outstanding-principal)
+              (.multiply daily-rate (decimal days-since-last-payment)
+                    decimal-context)
+              decimal-context)
         settlement       (+ outstanding-principal accrued-interest)
         interest-saved   (- original-total-interest total-interest-paid accrued-interest)]
     {:settlement-amount    (round2 settlement)
@@ -231,8 +248,10 @@
   "Returns DTI ratio as a decimal (e.g. 0.35 = 35%)."
   [monthly-income existing-obligations new-payment]
   (if (pos? monthly-income)
-    (/ (+ (double existing-obligations) (double new-payment)) (double monthly-income))
-    1.0))
+    (.divide (+ (decimal existing-obligations) (decimal new-payment))
+             (decimal monthly-income)
+             decimal-context)
+    BigDecimal/ONE))
 
 (defn dti-analysis
   "Full DTI breakdown with policy assessment.
@@ -264,8 +283,8 @@
 
 (defn loan-to-value [loan-amount collateral-value]
   (if (pos? collateral-value)
-    (/ (double loan-amount) (double collateral-value))
-    1.0))
+    (.divide (decimal loan-amount) (decimal collateral-value) decimal-context)
+    BigDecimal/ONE))
 
 (defn ltv-analysis
   "Full LTV breakdown with policy assessment.
@@ -296,7 +315,7 @@
    already stretched thin shouldn't be accepted just because they signed."
   [{:keys [monthly-income existing-obligations guarantee-amount threshold]
     :or   {threshold 0.45}}]
-  (let [implied-monthly (/ (double guarantee-amount) 12)
+  (let [implied-monthly (.divide (decimal guarantee-amount) (decimal 12) decimal-context)
         dti-result      (dti-analysis {:monthly-income       monthly-income
                                         :existing-obligations existing-obligations
                                         :new-payment          implied-monthly

@@ -10,6 +10,7 @@
   [:map
    [:email    [:string {:min 3 :max 255}]]
    [:password [:string {:min 6 :max 100}]]
+  [:tenant-code {:optional true} [:string {:min 2 :max 50}]]
    [:mfa-code {:optional true} [:string {:min 6 :max 6}]]])
 
 (def TokenResponse

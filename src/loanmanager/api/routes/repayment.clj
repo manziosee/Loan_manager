@@ -43,7 +43,7 @@
                                loan    (loans-db/find-loan ds tenant-id loan-id)]
                            (if-not loan
                              {:status 404 :body {:error "Loan not found"}}
-                             (let [schedule (loans-db/get-schedule ds loan-id)
+                             (let [schedule (loans-db/get-schedule ds tenant-id loan-id)
                                    total-interest-original (reduce + (map :repayment-schedules/interest-due schedule))
                                    total-interest-paid     (:loans/total-paid-interest loan)
                                    days    (or (:days-since-last-payment query-params) 0)
@@ -79,7 +79,7 @@
                                                                      :outstanding (:loans/outstanding-principal loan)
                                                                      :prepayment  prepayment-amount})))
                                 ;; Remaining periods from schedule
-                                remaining-schedule (loans-db/get-schedule ds loan-id)
+                                remaining-schedule (loans-db/get-schedule ds tenant-id loan-id)
                                 pending-count      (count (filter #(= "pending" (:repayment-schedules/status %))
                                                                   remaining-schedule))
                                 ;; Record as payment (principal only)
@@ -140,7 +140,7 @@
                                 loan    (loans-db/find-loan ds tenant-id loan-id)]
                           (if-not loan
                             {:status 404 :body {:error "Loan not found"}}
-                          (let [schedule (loans-db/get-schedule ds loan-id)
+                          (let [schedule (loans-db/get-schedule ds tenant-id loan-id)
                                 total-interest-original (reduce + (map :repayment-schedules/interest-due schedule))
                                 quote    (finance/early-repayment-settlement
                                            {:outstanding-principal   (:loans/outstanding-principal loan)

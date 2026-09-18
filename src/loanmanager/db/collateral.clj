@@ -3,21 +3,27 @@
             [honey.sql :as sql]
             [loanmanager.db.connection :as db]))
 
-(defn list-for-loan [ds loan-id]
+(defn list-for-loan [ds tenant-id loan-id]
   (jdbc/execute! ds
-    (sql/format {:select   [:*]
-                 :from     [:collateral]
-                 :where    [:= :loan-id loan-id]
-                 :order-by [[:created-at :asc]]})))
+    (sql/format {:select   [:c.*]
+                 :from     [[:collateral :c]]
+                 :join     [[:loans :l] [:= :c.loan-id :l.id]]
+                 :where    [:and [:= :c.loan-id loan-id]
+                                  [:= :c.tenant-id tenant-id]
+                                  [:= :l.tenant-id tenant-id]]
+                 :order-by [[:c.created-at :asc]]})))
 
 (defn total-valuation
   "Sum of all collateral attached to a loan — the input to a loan-to-value
    calculation (loanmanager.domain.finance/loan-to-value)."
-  [ds loan-id]
+    [ds tenant-id loan-id]
   (-> (jdbc/execute-one! ds
-        (sql/format {:select [[[:coalesce [:sum :valuation] 0] :total]]
-                     :from   [:collateral]
-                     :where  [:= :loan-id loan-id]}))
+      (sql/format {:select [[[:coalesce [:sum :c.valuation] 0] :total]]
+           :from   [[:collateral :c]]
+           :join   [[:loans :l] [:= :c.loan-id :l.id]]
+           :where  [:and [:= :c.loan-id loan-id]
+              [:= :c.tenant-id tenant-id]
+              [:= :l.tenant-id tenant-id]]}))
       vals first))
 
 (defn create! [ds item]
@@ -33,14 +39,16 @@
                  :where     [:and [:= :tenant-id tenant-id] [:= :id id]]
                  :returning [:*]})))
 
-(defn list-guarantors [ds loan-id]
+(defn list-guarantors [ds tenant-id loan-id]
   (jdbc/execute! ds
     (sql/format {:select   [:g.* [:c.first-name :customer-first-name]
                              [:c.last-name :customer-last-name]
                              [:c.phone :customer-phone]]
                  :from     [[:guarantors :g]]
-                 :join     [[:customers :c] [:= :g.customer-id :c.id]]
-                 :where    [:= :g.loan-id loan-id]})))
+                :join     [[:customers :c] [:= :g.customer-id :c.id]
+                           [:loans :l]     [:= :g.loan-id :l.id]]
+                 :where    [:and [:= :g.loan-id loan-id]
+                                  [:= :l.tenant-id tenant-id]]})))
 
 (defn add-guarantor! [ds guarantor]
   (db/execute-one! ds
