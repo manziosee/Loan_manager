@@ -12,6 +12,20 @@
                  :join   [[:roles :r] [:= :u.role-id :r.id]]
                  :where  [:and [:= :u.tenant-id tenant-id] [:= :u.id id]]})))
 
+(defn find-active-session-user
+  "Returns the current authorization attributes for an active user. JWT claims
+   are a login-time snapshot; account, role, and branch changes must apply to
+   every subsequent request."
+  [ds tenant-id id]
+  (jdbc/execute-one! ds
+    (sql/format {:select [:u.id :u.email :u.tenant-id :u.branch-id
+                          [:r.name :role-name]]
+                 :from   [[:users :u]]
+                 :join   [[:roles :r] [:= :u.role-id :r.id]]
+                 :where  [:and [:= :u.tenant-id tenant-id]
+                               [:= :u.id id]
+                               [:= :u.active true]]})))
+
 (defn find-by-email [ds email]
   (jdbc/execute-one! ds
     (sql/format {:select [:u.* [:r.name :role-name] [:r.permissions :permissions]]
