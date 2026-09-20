@@ -248,10 +248,10 @@
   "Returns DTI ratio as a decimal (e.g. 0.35 = 35%)."
   [monthly-income existing-obligations new-payment]
   (if (pos? monthly-income)
-    (.divide (+ (decimal existing-obligations) (decimal new-payment))
-             (decimal monthly-income)
-             decimal-context)
-    BigDecimal/ONE))
+    (double (.divide (+ (decimal existing-obligations) (decimal new-payment))
+                     (decimal monthly-income)
+                     decimal-context))
+    1.0))
 
 (defn dti-analysis
   "Full DTI breakdown with policy assessment.
@@ -283,8 +283,8 @@
 
 (defn loan-to-value [loan-amount collateral-value]
   (if (pos? collateral-value)
-    (.divide (decimal loan-amount) (decimal collateral-value) decimal-context)
-    BigDecimal/ONE))
+    (double (.divide (decimal loan-amount) (decimal collateral-value) decimal-context))
+    1.0))
 
 (defn ltv-analysis
   "Full LTV breakdown with policy assessment.
