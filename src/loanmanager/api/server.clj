@@ -27,7 +27,8 @@
             [loanmanager.api.routes.audit :as audit-routes]
             [loanmanager.api.routes.users :as user-routes]
             [loanmanager.api.routes.reports :as report-routes]
-            [loanmanager.api.routes.tenants :as tenant-routes]))
+            [loanmanager.api.routes.tenants :as tenant-routes]
+            [loanmanager.api.routes.integrations :as integration-routes]))
 
 (def swagger-tags
   [{:name "System"           :description "Health checks and system status"}
@@ -52,6 +53,7 @@
    {:name "Notifications"    :description "In-app notification management"}
    {:name "Audit"            :description "Immutable audit trail"}
    {:name "Tenants"          :description "Multi-tenant provisioning"}
+  {:name "Integrations"     :description "Payment-provider webhooks and reconciliation operations"}
    {:name "Tools"            :description "Public simulation and calculation tools"}])
 
 (defn create-handler [config ds bus]
@@ -80,7 +82,8 @@
        ;; ── Public routes (no auth) ───────────────────────────────────────────
        ["/api/v1"
         (health-routes/routes ds)
-        (auth-routes/routes ds config)]
+        (auth-routes/routes ds config)
+        (integration-routes/public-routes config ds)]
 
        ;; ── Protected routes (JWT required) ───────────────────────────────────
        ["/api/v1"
@@ -102,7 +105,8 @@
         (audit-routes/routes ds)
         (user-routes/routes ds)
         (report-routes/routes ds)
-        (tenant-routes/routes ds)]]
+        (tenant-routes/routes ds)
+        (integration-routes/protected-routes ds)]]
 
       {;; Some routes intentionally mix a literal segment (e.g. "/loans/simulate")
        ;; with a sibling dynamic id segment (e.g. "/loans/:id") at the same

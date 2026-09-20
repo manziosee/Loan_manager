@@ -1,4 +1,4 @@
-(ns loanmanager.api.routes.tenants
+ (ns loanmanager.api.routes.tenants
   "Tenant provisioning. Gated on :platform/manage — a platform-level
    permission held only by the :platform-admin role, deliberately never
    granted to a regular tenant's :admin (whose :all wildcard does not

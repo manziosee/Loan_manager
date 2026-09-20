@@ -155,6 +155,19 @@
                              :body   (loans-db/update-application! ds tenant-id id
                                        {:status "withdrawn" :decided-at [:now]})}))}}]
 
+   ["/loan-applications/:id/approval-history"
+    {:get {:summary    "Get maker-checker approval history for an application"
+           :tags       ["Applications" "Workflow"]
+           :parameters {:path [:map [:id :string]]}
+           :handler    (fn [{:keys [identity tenant-id path-params]}]
+                         (rbac/require-permission identity :application/read)
+                         (let [id  (parse-uuid (:id path-params))
+                               app (loans-db/find-application ds tenant-id id)]
+                           (if-not app
+                             {:status 404 :body {:error "Application not found"}}
+                             {:status 200
+                              :body   (loans-db/get-approval-steps ds tenant-id id)})))}}]
+
    ["/loan-applications/:id/approve"
     {:post {:summary    "Approve, reject, or return an application at its current
                          maker-checker step. Multi-step workflows (large/very-large

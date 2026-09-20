@@ -195,6 +195,7 @@ PUT  /api/v1/loan-applications/:id           Update draft
 POST /api/v1/loan-applications/:id/withdraw  Withdraw application
 POST /api/v1/loan-applications/:id/approve   Approve / reject / return
 POST /api/v1/loan-applications/:id/disburse  Disburse approved loan
+GET  /api/v1/loan-applications/:id/approval-history  Maker-checker history
 ```
 
 ### Loans
@@ -263,6 +264,18 @@ POST /api/v1/ledger/preview/disbursement Preview disbursement entry
 POST /api/v1/ledger/preview/payment      Preview payment entry
 ```
 
+### Provider Integrations & Reconciliation
+```
+POST /api/v1/integrations/:provider/webhook  Receive signed provider webhook
+GET  /api/v1/loans/:id/provider-transactions List external transactions
+GET  /api/v1/integrations/reconciliation-exceptions List exceptions
+POST /api/v1/integrations/reconciliation-exceptions/:id/resolve Resolve exception
+```
+
+Webhook requests require `X-Webhook-Signature`, an HMAC-SHA256 hex digest over
+the JSON request body. The provider secret is configured with
+`MTN_MOMO_WEBHOOK_SECRET`; invalid signatures are rejected before persistence.
+
 ### Reports
 ```
 GET /api/v1/reports/portfolio     PAR buckets, NPL ratio, totals
@@ -282,6 +295,8 @@ POST /api/v1/notifications/:id/read     Mark as read
 ```
 GET /api/v1/audit/entities/:type/:id   Entity change history
 GET /api/v1/audit/users/:id/activity   User activity log
+GET  /api/v1/audit/events               Recent domain events
+GET  /api/v1/audit/events/:type/:id     Aggregate event history
 ```
 
 ---

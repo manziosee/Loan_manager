@@ -84,12 +84,14 @@
                  :values      [step]
                  :returning   [:*]})))
 
-(defn get-approval-steps [ds application-id]
+(defn get-approval-steps [ds tenant-id application-id]
   (jdbc/execute! ds
     (sql/format {:select   [:as.* [:u.full-name :actor-name] [:u.email :actor-email]]
                  :from     [[:approval-steps :as]]
                  :left-join [[:users :u] [:= :as.assigned-to :u.id]]
-                 :where    [:= :as.application-id application-id]
+                 :join     [[:loan-applications :la] [:= :as.application-id :la.id]]
+                 :where    [:and [:= :as.application-id application-id]
+                                  [:= :la.tenant-id tenant-id]]
                  :order-by [[:as.step-order :asc]]})))
 
 (defn payment-history-stats

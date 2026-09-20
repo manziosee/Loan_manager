@@ -1,0 +1,43 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(MSYS_NO_PATHCONV=1 docker run --rm -v \"d:/Loan_manager:/app\" -w /app clojure:temurin-21-tools-deps sh -c \"clojure -Sdeps '{:deps {clj-kondo/clj-kondo {:mvn/version \\\\\"2024.05.24\\\\\"}}}' -M -m clj-kondo.main --lint src test 2>&1 | tail -150\")",
+      "Bash(MSYS_NO_PATHCONV=1 docker run --rm -v \"d:/Loan_manager:/app\" -w /app clojure:temurin-21-tools-deps sh -c \"clojure -M:test 2>&1 | tail -200\")",
+      "Bash(docker-compose ps *)",
+      "Bash(curl -s -w '\\\\nHTTP_STATUS:%{http_code}\\\\n' 'http://localhost:8080/api/v1/reports/disbursements?from=2026-01-01&to=2026-12-31' -H 'Authorization: Bearer __CMDSUB_OUTPUT__')",
+      "Bash(curl -s -w '\\\\nHTTP_STATUS:%{http_code}\\\\n' 'http://localhost:8080/api/v1/reports/disbursements?from=2026-01-01&to=2026-12-31&format=csv' -H 'Authorization: Bearer __CMDSUB_OUTPUT__')",
+      "Bash(MSYS_NO_PATHCONV=1 docker run --rm -v \"d:/Loan_manager:/app\" -w /app clojure:temurin-21-tools-deps sh -c \"clojure -M -e '\\(require \\(quote [honey.sql :as sql]\\)\\) \\(println \\(sql/format {:select [[[:date-trunc \\\\\"month\\\\\" :disbursed-at] :month] [[:count :id] :count] [[:sum :principal] :total-disbursed]] :from [:loans] :where [:and [:= :tenant-id \\\\\"x\\\\\"] [:>= :disbursed-at \\\\\"2026-01-01\\\\\"] [:<= :disbursed-at \\\\\"2026-12-31\\\\\"]] :group-by [[:date-trunc \\\\\"month\\\\\" :disbursed-at]] :order-by [[[:date-trunc \\\\\"month\\\\\" :disbursed-at] :asc]]}\\)\\)' 2>&1 | tail -20\")",
+      "Bash(MSYS_NO_PATHCONV=1 docker run --rm -v \"d:/Loan_manager:/app\" -w /app clojure:temurin-21-tools-deps sh -c \"clojure -M -e '\\(require \\(quote [honey.sql :as sql]\\)\\) \\(println \\(sql/format {:select [[[:date_trunc \\\\\"month\\\\\" :disbursed-at] :month]] :from [:loans]}\\)\\)' 2>&1 | tail -5\")",
+      "Bash(python \"/c/Users/oseem/AppData/Local/Temp/claude/d--Loan-manager/d29e986a-40b5-4a71-a245-b0c00669dec4/scratchpad/balance_check.py\" d:/Loan_manager/src/loanmanager/db/loans.clj)",
+      "Bash(curl -s -w '\\\\nHTTP:%{http_code}\\\\n' 'http://localhost:8080/api/v1/reports/disbursements?from=2026-01-01&to=2026-12-31' -H 'Authorization: Bearer __TRACKED_VAR__')",
+      "Bash(curl -s -w '\\\\nHTTP:%{http_code}\\\\n' 'http://localhost:8080/api/v1/reports/disbursements?from=2026-01-01&to=2026-12-31&format=csv' -H 'Authorization: Bearer __TRACKED_VAR__')",
+      "Bash(curl -s -w '\\\\nHTTP:%{http_code}\\\\n' 'http://localhost:8080/api/v1/reports/income?from=2026-01-01&to=2026-12-31&format=csv' -H 'Authorization: Bearer __TRACKED_VAR__')",
+      "Bash(curl -s -w '\\\\nHTTP:%{http_code}\\\\n' 'http://localhost:8080/api/v1/reports/collections?from=2026-01-01&to=2026-12-31&format=csv' -H 'Authorization: Bearer __TRACKED_VAR__')",
+      "Bash(MSYS_NO_PATHCONV=1 docker run --rm -v \"d:/Loan_manager:/app\" -w /app clojure:temurin-21-tools-deps sh -c \"clojure -M -e '\\(require \\(quote [honey.sql :as sql]\\)\\) \\(println \\(sql/format {:select [[[:date_trunc \\\\\"month\\\\\" :disbursed-at] :month] [[:count :id] :count] [[:sum :principal] :total-disbursed]] :from [:loans] :where [:and [:= :tenant-id \\\\\"x\\\\\"] [:>= :disbursed-at \\\\\"2026-01-01\\\\\"] [:<= :disbursed-at \\\\\"2026-12-31\\\\\"]] :group-by [[:date_trunc \\\\\"month\\\\\" :disbursed-at]] :order-by [[[:date_trunc \\\\\"month\\\\\" :disbursed-at] :asc]]}\\)\\)' 2>&1 | tail -5\")",
+      "Bash(MSYS_NO_PATHCONV=1 docker run --rm -v \"d:/Loan_manager:/app\" -w /app clojure:temurin-21-tools-deps sh -c \"clojure -M -e '\\(require \\(quote [honey.sql :as sql]\\)\\) \\(println \\(sql/format {:select [[[:date_trunc [:inline \\\\\"month\\\\\"] :disbursed-at] :month]] :from [:loans] :group-by [[:date_trunc [:inline \\\\\"month\\\\\"] :disbursed-at]]}\\)\\)' 2>&1 | tail -5\")",
+      "Bash(curl -sD - -o /dev/null 'http://localhost:8080/api/v1/reports/disbursements?from=2026-01-01&to=2026-12-31&format=csv' -H 'Authorization: Bearer __CMDSUB_OUTPUT__')",
+      "Bash(MSYS_NO_PATHCONV=1 docker run --rm clojure:temurin-21-tools-deps clojure -M -e '\\(println \\(* 5.0M 2.0\\)\\) \\(println \\(/ 5.0M 2.0\\)\\) \\(println \\(/ 0.1M 12\\)\\) \\(println \\(/ \\(double 0.1M\\) 12\\)\\)')",
+      "Bash(python /c/Users/oseem/AppData/Local/Temp/claude/d--Loan-manager/d29e986a-40b5-4a71-a245-b0c00669dec4/scratchpad/balance_check.py d:/Loan_manager/src/loanmanager/domain/finance.clj d:/Loan_manager/src/loanmanager/domain/credit_score.clj d:/Loan_manager/src/loanmanager/domain/delinquency.clj)",
+      "Bash(MSYS_NO_PATHCONV=1 docker run --rm -v \"d:/Loan_manager:/app\" -w /app clojure:temurin-21-tools-deps sh -c \"clojure -M:test 2>&1 | tail -30\")",
+      "Bash(curl -s http://localhost:8080/api/v1/roles -H 'Authorization: Bearer __CMDSUB_OUTPUT__')",
+      "Bash(curl -s \"http://localhost:8080/api/v1/health/live\")",
+      "Bash(docker-compose exec *)",
+      "Bash(curl -s -X POST http://localhost:8080/api/v1/loan-applications/__CMDSUB_OUTPUT__/approve -H 'Authorization: Bearer __TRACKED_VAR__' -H 'Content-Type: application/json' -d '{\"action\":\"approved\",\"comments\":\"committee ok\"}')",
+      "Bash(python /c/Users/oseem/AppData/Local/Temp/claude/d--Loan-manager/d29e986a-40b5-4a71-a245-b0c00669dec4/scratchpad/balance_check.py d:/Loan_manager/src/loanmanager/api/routes/loans.clj d:/Loan_manager/src/loanmanager/api/schemas.clj)",
+      "Bash(python \"/c/Users/oseem/AppData/Local/Temp/claude/d--Loan-manager/d29e986a-40b5-4a71-a245-b0c00669dec4/scratchpad/balance_check.py\" d:/Loan_manager/src/loanmanager/api/routes/loans.clj)",
+      "Bash(MSYS_NO_PATHCONV=1 docker run --rm -v \"d:/Loan_manager:/app\" -w /app clojure:temurin-21-tools-deps sh -c \"clojure -M:test 2>&1 | tail -10\")",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('principal:',d['loans/principal']\\); print\\('interest-rate:',d['loans/interest-rate']\\); print\\('duration-months:',d['loans/duration-months']\\); print\\('loan-id:',d['loans/id']\\)\")",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d.get\\('capacity'\\), indent=2\\)\\)\")",
+      "Bash(MSYS_NO_PATHCONV=1 docker run --rm --network loan_manager_backend -e ENV=production -e DATABASE_URL=jdbc:postgresql://loan_manager-db-1:5432/loanmanager?stringtype=unspecified -e DB_USER=postgres -e DB_PASS=postgres -e JWT_SECRET=change-me-in-production-min-32-chars!! -e ENCRYPTION_KEY=Bakokmnp9kAeX5+21sc++tK5/A4KKNTMKMRk6NDxkrY= loan_manager-app)",
+      "Bash(MSYS_NO_PATHCONV=1 docker run --rm --network loan_manager_backend -e ENV=production -e DATABASE_URL=jdbc:postgresql://loan_manager-db-1:5432/loanmanager?stringtype=unspecified -e DB_USER=postgres -e DB_PASS=postgres -e JWT_SECRET=a-genuinely-different-real-secret-value-xyz123 -e ENCRYPTION_KEY=Bakokmnp9kAeX5+21sc++tK5/A4KKNTMKMRk6NDxkrY= -d --name prod-boot-test loan_manager-app)",
+      "Bash(MSYS_NO_PATHCONV=1 docker run --rm --network loan_manager_backend -e ENV=production -e DATABASE_URL=jdbc:postgresql://loan_manager-db-1:5432/loanmanager?stringtype=unspecified -e DB_USER=postgres -e DB_PASS=postgres -e JWT_SECRET=a-genuinely-different-real-secret-value-xyz123 -e ENCRYPTION_KEY=Bakokmnp9kAeX5+21sc++tK5/A4KKNTMKMRk6NDxkrY= -d --name prod-boot-test2 loan_manager-app)",
+      "Bash(MSYS_NO_PATHCONV=1 docker run --network loan_manager_backend -e ENV=production -e DATABASE_URL=jdbc:postgresql://loan_manager-db-1:5432/loanmanager?stringtype=unspecified -e DB_USER=postgres -e DB_PASS=postgres -e JWT_SECRET=a-genuinely-different-real-secret-value-xyz123 -e ENCRYPTION_KEY=Bakokmnp9kAeX5+21sc++tK5/A4KKNTMKMRk6NDxkrY= -d --name prod-boot-test3 loan_manager-app)",
+      "Bash(MSYS_NO_PATHCONV=1 docker run --network loan_manager_backend -e ENV=production -e DATABASE_URL=jdbc:postgresql://loan_manager-db-1:5432/loanmanager?stringtype=unspecified -e DB_USER=postgres -e DB_PASS=postgres -e JWT_SECRET=a-genuinely-different-real-secret-value-xyz123 -e ENCRYPTION_KEY=Bakokmnp9kAeX5+21sc++tK5/A4KKNTMKMRk6NDxkrY= -d --name prod-boot-test4 loan_manager-app)",
+      "Bash(MSYS_NO_PATHCONV=1 docker run --network loan_manager_backend -e ENV=production -e DATABASE_URL=jdbc:postgresql://loan_manager-db-1:5432/loanmanager?stringtype=unspecified -e DB_USER=postgres -e DB_PASS=a-different-real-db-password-999 -e JWT_SECRET=a-genuinely-different-real-secret-value-xyz123 -e ENCRYPTION_KEY=Bakokmnp9kAeX5+21sc++tK5/A4KKNTMKMRk6NDxkrY= -d --name prod-boot-test5 loan_manager-app)",
+      "Bash(xargs -r docker rm -f)",
+      "Bash(git fetch *)",
+      "Bash(git ls-remote *)",
+      "Bash(gh --version)"
+    ]
+  }
+}

@@ -64,3 +64,46 @@
                           :available-at retry-at}
                  :where  [:= :id id]
                  :returning [:*]})))
+
+(defn receive-webhook! [ds {:keys [provider external-event-id tenant-id
+                                   signature-valid payload]}]
+  (db/execute-one! ds
+    (sql/format {:insert-into :payment-webhook-inbox
+                 :values      [{:provider          provider
+                                :external-event-id external-event-id
+                                :tenant-id          tenant-id
+                                :signature-valid    signature-valid
+                                :payload            [:lift payload]}]
+                 :on-conflict [:provider :external-event-id]
+                 :do-nothing  true
+                 :returning   [:*]})))
+
+(defn provider-transactions [ds tenant-id loan-id]
+  (jdbc/execute! ds
+    (sql/format {:select   [:*]
+                 :from     [:payment-provider-transactions]
+                 :where    [:and [:= :tenant-id tenant-id]
+                                  [:= :loan-id loan-id]]
+                 :order-by [[:created-at :desc]]})))
+
+(defn reconciliation-exceptions [ds tenant-id {:keys [status limit offset]
+                                               :or   {limit 50 offset 0}}]
+  (jdbc/execute! ds
+    (sql/format (cond-> {:select   [:*]
+                         :from     [:reconciliation-exceptions]
+                         :where    [:= :tenant-id tenant-id]
+                         :order-by [[:created-at :desc]]
+                         :limit    limit
+                         :offset   offset}
+                  status (update :where conj [:= :status status])))))
+
+(defn resolve-reconciliation-exception! [ds tenant-id id user-id]
+  (db/execute-one! ds
+    (sql/format {:update :reconciliation-exceptions
+                 :set    {:status      "resolved"
+                          :resolved-by  user-id
+                          :resolved-at  [:now]}
+                 :where  [:and [:= :tenant-id tenant-id]
+                               [:= :id id]
+                               [:= :status "open"]]
+                 :returning [:*]})))

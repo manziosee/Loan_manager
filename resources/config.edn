@@ -37,6 +37,9 @@
             :smtp-pass #or [#env SMTP_PASS nil]
             :from      #or [#env SMTP_FROM "noreply@loanmanager.local"]}
 
+ :integrations {:mtn-momo {:webhook-secret #or [#env MTN_MOMO_WEBHOOK_SECRET nil]}
+                :xero     {:enabled #or [#env XERO_ENABLED "false"]}}
+
  :swagger  {:title       "LoanOS API"
             :description "Bank-grade Loan Management Platform"
             :version     "1.0.0"}}

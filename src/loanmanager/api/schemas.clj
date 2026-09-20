@@ -20,6 +20,29 @@
    [:token-type    :string]
    [:expires-in    :int]])
 
+(def ErrorResponse
+  [:map [:error :string] [:message {:optional true} :string]])
+
+(def ProviderWebhook
+  [:map
+   [:event-id :string]
+   [:transaction-id {:optional true} :string]
+   [:status {:optional true} :string]
+   [:amount {:optional true} [:double {:min 0}]]
+   [:currency {:optional true} :string]
+   [:reference {:optional true} :string]])
+
+(def WebhookAccepted
+  [:map [:accepted :boolean]
+        [:duplicate {:optional true} :boolean]
+        [:webhook-id {:optional true} :string]])
+
+(def IntegrationListQuery
+  [:map
+   [:status {:optional true} [:enum "open" "resolved"]]
+   [:limit {:optional true} :int]
+   [:offset {:optional true} :int]])
+
 ;; ── Customer ──────────────────────────────────────────────────────────────────
 (def CustomerCreate
   [:map
