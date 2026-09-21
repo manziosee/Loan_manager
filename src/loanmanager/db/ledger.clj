@@ -48,3 +48,16 @@
                                       :credit            credit
                                       :currency          currency}]}))))
     je-id))
+
+(defn mark-reference-reversed!
+  "Marks the original journal entry as reversed after a compensating entry is
+   posted in the same transaction."
+  [tx tenant-id reference-type reference-id]
+  (db/execute-one! tx
+    (sql/format {:update :journal-entries
+                 :set    {:reversed true}
+                 :where  [:and [:= :tenant-id tenant-id]
+                               [:= :reference-type (name reference-type)]
+                               [:= :reference-id reference-id]
+                               [:= :reversed false]]
+                 :returning [:id]})))

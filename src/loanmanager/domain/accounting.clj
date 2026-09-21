@@ -38,6 +38,16 @@
            (pos? principal-portion) (conj (credit LOANS-RECEIVABLE principal-portion currency))
            (pos? interest-portion)  (conj (credit INTEREST-INCOME  interest-portion  currency)))))
 
+(defn payment-reversal-entry
+  "Compensating entry for a previously posted payment.
+   Debit the receivable and interest income accounts and credit cash."
+  [{:keys [payment-id principal-portion interest-portion currency reference-id]}]
+  (entry (str "Reverse loan payment " payment-id)
+         :payment-reversal (or reference-id payment-id)
+         (cond-> [(credit CASH-AT-BANK (+ principal-portion interest-portion) currency)]
+           (pos? principal-portion) (conj (debit LOANS-RECEIVABLE principal-portion currency))
+           (pos? interest-portion)  (conj (debit INTEREST-INCOME interest-portion currency)))))
+
 (defn processing-fee-entry
   [{:keys [loan-id amount currency reference-id]}]
   (entry (str "Processing fee " loan-id)

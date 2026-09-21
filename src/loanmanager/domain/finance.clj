@@ -348,3 +348,52 @@
      :total-interest      (round2 t-interest)
      :total-cost          (round2 t-cost)
      :effective-rate-pct  (round2 (* 100 (/ t-interest principal)))}))
+
+;; ── Payment allocation ───────────────────────────────────────────────────────
+
+(defn allocate-payment
+  "Allocates a payment across a schedule in due-date/installment order.
+   Interest is paid before principal on each installment. Returns updated
+   installments and the exact portions applied; excess cash is rejected rather
+  than silently leaving an unexplained balance."
+  [schedule amount]
+  (let [amount (decimal amount)]
+    (loop [remaining amount
+           installments schedule
+           updated-schedule []
+           allocated []]
+      (if (or (zero? remaining) (empty? installments))
+        (if (pos? remaining)
+          (throw (ex-info "Payment exceeds scheduled outstanding balance"
+                          {:type :validation :unallocated remaining}))
+          {:schedule (into updated-schedule installments)
+           :interest-portion (round2 (reduce + (map :interest-applied allocated)))
+           :principal-portion (round2 (reduce + (map :principal-applied allocated)))
+           :allocated allocated})
+        (let [installment (first installments)
+              interest-due (decimal (:interest-due installment))
+              principal-due (decimal (:principal-due installment))
+              interest-paid (decimal (or (:interest-paid installment) 0))
+              principal-paid (decimal (or (:principal-paid installment) 0))
+              interest-open (max BigDecimal/ZERO (- interest-due interest-paid))
+              principal-open (max BigDecimal/ZERO (- principal-due principal-paid))
+              interest-applied (min remaining interest-open)
+              after-interest (- remaining interest-applied)
+              principal-applied (min after-interest principal-open)
+              applied (+ interest-applied principal-applied)
+              new-interest-paid (+ interest-paid interest-applied)
+              new-principal-paid (+ principal-paid principal-applied)
+              complete? (and (>= new-interest-paid interest-due)
+                             (>= new-principal-paid principal-due))
+              updated (assoc installment
+                              :interest-paid (round2 new-interest-paid)
+                              :principal-paid (round2 new-principal-paid)
+                              :status (if complete? :paid :partial)
+                              :paid-at (when complete? (java.time.Instant/now)))]
+               (recur (- remaining applied)
+               (rest installments)
+               (conj updated-schedule updated)
+                 (conj allocated {:schedule-id      (:id installment)
+                        :installment-no   (:installment-no installment)
+                                  :interest-applied interest-applied
+                                  :principal-applied principal-applied})))))))

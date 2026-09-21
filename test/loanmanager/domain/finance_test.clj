@@ -220,3 +220,34 @@
       (is (= 12 (:installments summary)))
       (is (pos? (double (:total-interest summary))))
       (is (= 10000.0 (double (:total-principal summary)))))))
+
+(deftest payment-allocation
+  (testing "Allocates interest before principal and marks a paid installment"
+    (let [result (f/allocate-payment
+                   [{:installment-no 1 :interest-due 25 :principal-due 75
+                     :interest-paid 0 :principal-paid 0 :status :pending}
+                    {:installment-no 2 :interest-due 20 :principal-due 80
+                     :interest-paid 0 :principal-paid 0 :status :pending}]
+                   100)]
+      (is (= 25M (:interest-portion result)))
+      (is (= 75M (:principal-portion result)))
+      (is (= :paid (:status (first (:schedule result)))))
+      (is (= :pending (:status (second (:schedule result)))))))
+
+  (testing "Partial payment preserves the unpaid balance"
+    (let [result (f/allocate-payment
+                   [{:installment-no 1 :interest-due 25 :principal-due 75
+                     :interest-paid 0 :principal-paid 0 :status :pending}]
+                   40)
+          installment (first (:schedule result))]
+      (is (= 25M (:interest-portion result)))
+      (is (= 15M (:principal-portion result)))
+      (is (= :partial (:status installment)))
+      (is (= 15M (:principal-paid installment)))))
+
+  (testing "Overpayment is rejected"
+    (is (thrown? clojure.lang.ExceptionInfo
+                 (f/allocate-payment
+                   [{:installment-no 1 :interest-due 25 :principal-due 75
+                     :interest-paid 0 :principal-paid 0 :status :pending}]
+                   101)))))

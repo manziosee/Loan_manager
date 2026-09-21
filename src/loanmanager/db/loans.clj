@@ -2,6 +2,9 @@
   (:require [next.jdbc :as jdbc]
             [honey.sql :as sql]
             [loanmanager.db.connection :as db]
+            [loanmanager.domain.finance :as finance]
+            [loanmanager.domain.accounting :as accounting]
+            [loanmanager.db.ledger :as ledger]
             [tick.core :as t]
             [clojure.string :as str]))
 
@@ -174,6 +177,14 @@
                      :where  [:= :loan-id loan-id]}))
       vals first))
 
+(defn max-paid-installment-no [ds loan-id]
+  (-> (jdbc/execute-one! ds
+        (sql/format {:select [[[:coalesce [:max :installment-no] 0] :max-no]]
+                     :from   [:repayment-schedules]
+                     :where  [:and [:= :loan-id loan-id]
+                                    [:in :status ["partial" "paid" "overdue"]]]}))
+      vals first))
+
 (defn get-schedule [ds tenant-id loan-id]
   (jdbc/execute! ds
     (sql/format {:select   [:rs.*]
@@ -192,6 +203,16 @@
     (sql/format {:delete-from :repayment-schedules
                  :where       [:and [:= :loan-id loan-id] [:= :status "pending"]]})))
 
+(defn mark-schedule-settled! [tx loan-id]
+  (db/execute! tx
+    (sql/format {:update :repayment-schedules
+                 :set    {:principal-paid :principal-due
+                          :interest-paid  :interest-due
+                          :status         "paid"
+                          :paid-at        [:now]}
+                 :where  [:and [:= :loan-id loan-id]
+                                [:not= :status "paid"]]})))
+
 (defn next-due-installment [ds loan-id]
   (jdbc/execute-one! ds
     (sql/format {:select   [:*]
@@ -200,6 +221,61 @@
                                  [:in :status ["pending" "partial" "overdue"]]]
                  :order-by [[:due-date :asc]]
                  :limit    1})))
+
+(defn apply-payment-allocation!
+  "Allocates a payment against a tenant-owned loan schedule and persists the
+   installment balances. The caller must already be inside the payment
+  transaction so the schedule and payment cannot diverge."
+  [tx tenant-id loan-id amount]
+  (let [rows     (get-schedule tx tenant-id loan-id)
+        schedule (mapv (fn [row]
+                         {:id              (:repayment-schedules/id row)
+                          :installment-no  (:repayment-schedules/installment-no row)
+                          :interest-due    (:repayment-schedules/interest-due row)
+                          :principal-due   (:repayment-schedules/principal-due row)
+                          :interest-paid   (:repayment-schedules/interest-paid row)
+                          :principal-paid  (:repayment-schedules/principal-paid row)
+                          :status          (keyword (:repayment-schedules/status row))})
+                       rows)
+        allocation (finance/allocate-payment schedule amount)]
+    (doseq [{:keys [id interest-paid principal-paid status paid-at]} (:schedule allocation)]
+      (db/execute-one! tx
+        (sql/format {:update :repayment-schedules
+                     :set    (cond-> {:interest-paid  interest-paid
+                                      :principal-paid principal-paid
+                                      :status         (name status)}
+                               paid-at (assoc :paid-at paid-at))
+                     :where  [:= :id id]})))
+    allocation))
+
+(defn record-payment-allocations! [tx tenant-id payment-id allocation]
+  (doseq [{:keys [schedule-id principal-applied interest-applied]} (:allocated allocation)]
+    (db/execute-one! tx
+      (sql/format {:insert-into :payment-allocations
+                   :values      [{:tenant-id         tenant-id
+                                  :payment-id         payment-id
+                                  :schedule-id        schedule-id
+                                  :principal-applied principal-applied
+                                  :interest-applied  interest-applied}]}))))
+
+(defn reverse-payment-schedule! [tx tenant-id payment-id]
+  (let [allocations (jdbc/execute! tx
+                      (sql/format {:select [:pa.*]
+                                   :from   [[:payment-allocations :pa]]
+                                   :join   [[:payments :p] [:= :pa.payment-id :p.id]]
+                                   :where  [:and [:= :pa.payment-id payment-id]
+                                                  [:= :pa.tenant-id tenant-id]
+                                                  [:= :p.tenant-id tenant-id]]}))]
+    (doseq [{:keys [payment-allocations/schedule-id
+                    payment-allocations/principal-applied
+                    payment-allocations/interest-applied]} allocations]
+      (db/execute-one! tx
+        (sql/format {:update :repayment-schedules
+                     :set    {:principal-paid [:- :principal-paid principal-applied]
+                              :interest-paid  [:- :interest-paid interest-applied]
+                              :status         "pending"
+                              :paid-at        nil}
+                     :where  [:= :id schedule-id]})))))
 
 (defn record-payment! [ds payment]
   (db/execute-one! ds
@@ -265,7 +341,7 @@
 
 (defn find-payment [ds tenant-id id]
   (jdbc/execute-one! ds
-    (sql/format {:select [:p.* [:l.tenant-id :tenant-id]]
+    (sql/format {:select [:p.* [:l.tenant-id :tenant-id] [:l.currency :loan-currency]]
                  :from   [[:payments :p]]
                  :join   [[:loans :l] [:= :p.loan-id :l.id]]
                  :where  [:and [:= :l.tenant-id tenant-id] [:= :p.id id]]})))
@@ -284,6 +360,16 @@
                                  :reversal-reason reason :reversed-by reversed-by}
                      :where     [:= :id payment-id]
                      :returning [:*]}))
+                (reverse-payment-schedule! tx tenant-id payment-id)
+                (let [reversal (accounting/payment-reversal-entry
+                         {:payment-id        (:payments/payment-no payment)
+                      :reference-id      (:payments/id payment)
+                      :principal-portion (:payments/principal-portion payment)
+                      :interest-portion  (:payments/interest-portion payment)
+                        :currency           (:loan-currency payment)})]
+                  (accounting/validate-entry reversal)
+                  (ledger/post-entry! tx {:tenant-id tenant-id :posted-by reversed-by} reversal)
+                  (ledger/mark-reference-reversed! tx tenant-id :payment (:payments/id payment)))
       ;; restore outstanding principal
       (db/execute-one! tx
         (sql/format {:update :loans

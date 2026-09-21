@@ -395,14 +395,14 @@
                             (if (:idempotency-keys/completed-at record)
                               {:status (:idempotency-keys/response-status record)
                                :body   (:idempotency-keys/response-body record)}
-                              (let [rate              (/ (:loans/interest-rate loan) 100)
-                                    interest-due      (* (:loans/outstanding-principal loan) (/ rate 12))
-                                    interest-portion  (min amount interest-due)
-                                    principal-portion (- amount interest-portion)
-                                    currency          (:loans/currency loan)
-                                    payment           (jdbc/with-transaction [tx ds]
-                                                        (let [tx (db/with-kebab-keys tx)
-                                                              payment (loans-db/record-payment! tx
+                              (let [currency          (:loans/currency loan)
+                                payment           (jdbc/with-transaction [tx ds]
+                                        (let [tx         (db/with-kebab-keys tx)
+                                          allocation (loans-db/apply-payment-allocation!
+                                               tx tenant-id loan-id amount)
+                                          interest-portion  (:interest-portion allocation)
+                                          principal-portion (:principal-portion allocation)
+                                          payment    (loans-db/record-payment! tx
                                                                         {:tenant-id         tenant-id
                                                                          :loan-id           loan-id
                                                                          :payment-no        (pay-no)
@@ -412,6 +412,10 @@
                                                                          :payment-method    payment-method
                                                                          :reference         reference
                                                                          :recorded-by       (:user-id identity)})
+                                                              _          (loans-db/record-payment-allocations!
+                                                                           tx tenant-id
+                                                                           (:payments/id payment)
+                                                                           allocation)
                                                               ledger-entry (accounting/payment-entry
                                                                              {:payment-id        (:payments/payment-no payment)
                                                                               :reference-id      (:payments/id payment)
